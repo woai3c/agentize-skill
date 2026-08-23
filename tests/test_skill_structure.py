@@ -29,8 +29,54 @@ class SkillStructureTests(unittest.TestCase):
         self.assertIn("$agentize", metadata)
 
     def test_documented_portable_commands_exist(self) -> None:
+        self.assertTrue((REPOSITORY_ROOT / "scripts" / "scan_repo.cjs").is_file())
         self.assertTrue((REPOSITORY_ROOT / "scripts" / "scan_repo.py").is_file())
         self.assertTrue((REPOSITORY_ROOT / "tests" / "behavior-cases.md").is_file())
+        self.assertTrue(
+            (
+                REPOSITORY_ROOT
+                / "tests"
+                / "forward-evidence"
+                / "audit-only-codex-2026-08-23.md"
+            ).is_file()
+        )
+
+    def test_target_binding_and_static_audit_boundary_are_explicit(self) -> None:
+        skill = (REPOSITORY_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("--root .", skill)
+        self.assertGreaterEqual(skill.count("--root <target-directory>"), 2)
+        self.assertIn(
+            "Use it for every scan, read, Git\n  query, command working directory, and write.",
+            skill,
+        )
+        self.assertIn(
+            "Treat an audit-only, report-only, review-only, or `do not modify` request as a\n"
+            "static assessment by default.",
+            skill,
+        )
+        self.assertIn(
+            "Audit-only runs use the static boundary above and do not\ninherit "
+            "these command-execution steps.",
+            skill,
+        )
+        self.assertIn(
+            "Treat `worktree_state: unverified` as unknown,\n  never clean.", skill
+        )
+        self.assertIn(
+            "Do not run a content-comparing Git\n  command merely to fill this gap "
+            "during a static audit.",
+            skill,
+        )
+
+    def test_non_audit_no_change_outcomes_still_use_verification(self) -> None:
+        skill = (REPOSITORY_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "This section governs non-audit coordination runs, including deliberate\n"
+            "no-change outcomes.",
+            skill,
+        )
 
 
 if __name__ == "__main__":

@@ -14,13 +14,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import unquote
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
-    tomllib = None
 
-
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 DEFAULT_MAX_FILES = 50_000
 MAX_REPORTED_PATHS = 200
 
@@ -51,7 +46,10 @@ VENDORED_DIRECTORIES = {"third_party", "vendor"}
 
 INSTRUCTION_FILES = {
     "AGENTS.md": "shared",
+    "AGENTS.local.md": "shared",
+    "AGENTS.override.md": "shared",
     "CLAUDE.md": "claude",
+    "CLAUDE.local.md": "claude",
     "GEMINI.md": "gemini",
     ".cursorrules": "cursor",
     ".windsurfrules": "windsurf",
@@ -98,6 +96,7 @@ TASK_RUNNER_NAMES = {
     "Taskfile.yml",
     "justfile",
 }
+TASKFILE_NAMES = {"taskfile.yaml", "taskfile.yml"}
 
 QUALITY_CONFIG_NAMES = {
     ".editorconfig",
@@ -126,6 +125,7 @@ AGENT_CONFIG_NAMES = {
     "config.yaml",
     "config.yml",
     "hooks.json",
+    "openai.yaml",
     "requirements.toml",
     "settings.json",
     "settings.local.json",
@@ -201,14 +201,130 @@ VERIFICATION_NAME = re.compile(
     r"(?:^|[-_:])(test|check|lint|format|fmt|typecheck|type-check|build|verify|ci|e2e|smoke)(?:$|[-_:])",
     re.IGNORECASE,
 )
+VERIFICATION_COMMAND = re.compile(
+    r"(?:\b(?:ava|ctest|e2e|eslint|jest|mocha|mypy|prettier|pytest|ruff|"
+    r"shellcheck|tsc|unittest|vitest)\b|\bnode\s+--(?:check|test)\b|"
+    r"\bgit\s+diff\s+--check\b|(?:^|[^A-Za-z0-9-])"
+    r"(?:build|check|compile|fmt|format|lint|smoke|test|tests|typecheck|"
+    r"type-check|validate|verify)"
+    r"(?:$|[^A-Za-z0-9]))",
+    re.IGNORECASE,
+)
+COMMAND_START = re.compile(
+    r"^(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\S+))\s+)*"
+    r"(?:env\s+)?(?:\.{0,2}[/\\][^\s]+|bash|bazel|buck2?|bun|bundle|cargo|"
+    r"cmake|cmd|composer|deno|docker|dotnet|eslint|git|go|gradle|java|just|"
+    r"make|maven|mise|mix|mvnw?|node|nox|npm|npx|nx|php|pnpm|poetry|"
+    r"powershell|prettier|pwsh|py|pytest|python(?:3(?:\.\d+)?)?|rake|ruby|"
+    r"ruff|shellcheck|sh|swift|task|tox|tsc|turbo|uv|vitest|xcodebuild|yarn|"
+    r"zsh)(?:\s|$)",
+    re.IGNORECASE,
+)
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_-]*)\s*$")
+COMMAND_FENCE_LANGUAGES = {
+    "",
+    "bash",
+    "batch",
+    "cmd",
+    "console",
+    "powershell",
+    "pwsh",
+    "sh",
+    "shell",
+    "text",
+    "txt",
+    "zsh",
+}
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 MAKE_TARGET = re.compile(r"^([A-Za-z0-9_.-]+)\s*:(?![=])")
 JUST_TARGET = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+[^:=]+)?\s*:(?![=])")
+SENSITIVE_NAME = (
+    r"(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?key|access[_-]?token|"
+    r"auth[_-]?token|authorization|client[_-]?secret|private[_-]?key|"
+    r"refresh[_-]?token|session[_-]?token|pat|token|password|passwd|secret|"
+    r"credential)s?(?:[_-][A-Za-z0-9]+)*"
+)
+SENSITIVE_ASSIGNMENT = re.compile(
+    rf"(?i)\b({SENSITIVE_NAME})\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s]+)"
+)
+SENSITIVE_OPTION = re.compile(
+    rf"(?i)(--{SENSITIVE_NAME})(?:\s+)(?:\"[^\"]*\"|'[^']*'|[^\s]+)"
+)
+BASIC_AUTH_URL = re.compile(
+    r"(?i)([A-Za-z][A-Za-z0-9+.-]*://)[^/\s:@]+:[^@\s/]+@"
+)
+BEARER_CREDENTIAL = re.compile(
+    r"(?i)\b(Bearer)\s+(?:\"[^\"]*\"|'[^']*'|[^\s\"']+)"
+)
 
 
 def relative_path(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
+
+
+def portable_name_key(value: str) -> tuple[bytes, bytes]:
+    """Sort names identically in the Python and Node.js implementations."""
+    folded = value.translate(
+        str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+    )
+    return folded.encode("utf-8"), value.encode("utf-8")
+
+
+def redact_sensitive_text(value: str) -> str:
+    redacted = SENSITIVE_ASSIGNMENT.sub(r"\1=<redacted>", value)
+    redacted = SENSITIVE_OPTION.sub(r"\1 <redacted>", redacted)
+    redacted = BASIC_AUTH_URL.sub(r"\1<redacted>@", redacted)
+    return BEARER_CREDENTIAL.sub(r"\1 <redacted>", redacted)
+
+
+def documented_verification_commands(text: str) -> list[dict[str, Any]]:
+    """Collect conservative command candidates from fenced instruction examples."""
+    commands: list[dict[str, Any]] = []
+    fence_character: str | None = None
+    fence_length = 0
+    inspect_fence = False
+
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if fence_character is None:
+            match = FENCE.match(line)
+            if not match:
+                continue
+            marker, language = match.groups()
+            fence_character = marker[0]
+            fence_length = len(marker)
+            inspect_fence = language.casefold() in COMMAND_FENCE_LANGUAGES
+            continue
+
+        if stripped.startswith(fence_character * fence_length) and not stripped.lstrip(
+            fence_character
+        ).strip():
+            fence_character = None
+            fence_length = 0
+            inspect_fence = False
+            continue
+        if not inspect_fence or len(commands) >= 50:
+            continue
+
+        candidate = stripped
+        if candidate.startswith(("$ ", "> ")):
+            candidate = candidate[2:].lstrip()
+        if (
+            not candidate
+            or candidate.startswith(("#", "//", "- ", "* "))
+            or len(candidate) > 1_000
+            or not COMMAND_START.search(candidate)
+            or not VERIFICATION_COMMAND.search(candidate)
+        ):
+            continue
+        commands.append(
+            {
+                "line": line_number,
+                "definition": redact_sensitive_text(candidate),
+            }
+        )
+    return commands
 
 
 def capped(values: Iterable[str], limit: int = MAX_REPORTED_PATHS) -> list[str]:
@@ -217,9 +333,10 @@ def capped(values: Iterable[str], limit: int = MAX_REPORTED_PATHS) -> list[str]:
 
 def walk_repository(
     root: Path, max_files: int, include_vendored: bool
-) -> tuple[list[Path], list[str], list[str], bool]:
+) -> tuple[list[Path], list[str], list[str], list[str], bool]:
     files: list[Path] = []
     skipped: set[str] = set()
+    skipped_symlinks: set[str] = set()
     errors: list[str] = []
     truncated = False
 
@@ -232,24 +349,35 @@ def walk_repository(
     ):
         current_path = Path(current)
         kept_directories: list[str] = []
-        for directory_name in sorted(directory_names, key=str.casefold):
+        for directory_name in sorted(directory_names, key=portable_name_key):
+            directory_path = current_path / directory_name
+            if directory_path.is_symlink():
+                skipped_symlinks.add(relative_path(directory_path, root))
+                continue
             folded = directory_name.casefold()
             is_vendored = folded in VENDORED_DIRECTORIES
             if folded in IGNORED_DIRECTORIES or (is_vendored and not include_vendored):
-                skipped.add(relative_path(current_path / directory_name, root))
+                skipped.add(relative_path(directory_path, root))
                 continue
             kept_directories.append(directory_name)
         directory_names[:] = kept_directories
 
-        for file_name in sorted(file_names, key=str.casefold):
-            files.append(current_path / file_name)
+        for file_name in sorted(file_names, key=portable_name_key):
+            file_path = current_path / file_name
+            if file_path.is_symlink():
+                try:
+                    file_path.resolve(strict=True).relative_to(root)
+                except (OSError, RuntimeError, ValueError):
+                    skipped_symlinks.add(relative_path(file_path, root))
+                    continue
             if len(files) >= max_files:
                 truncated = True
                 break
+            files.append(file_path)
         if truncated:
             break
 
-    return files, sorted(skipped), errors, truncated
+    return files, sorted(skipped), sorted(skipped_symlinks), errors, truncated
 
 
 def is_ci_path(relative: str) -> bool:
@@ -305,9 +433,10 @@ def instruction_kind(relative: str) -> str | None:
 
 def is_skill_path(relative: str) -> bool:
     path = Path(relative)
-    return path.name == "SKILL.md" and "skills" in {
-        part.casefold() for part in path.parts[:-1]
-    }
+    return path.name == "SKILL.md" and (
+        len(path.parts) == 1
+        or "skills" in {part.casefold() for part in path.parts[:-1]}
+    )
 
 
 def is_agent_config(relative: str) -> bool:
@@ -315,17 +444,33 @@ def is_agent_config(relative: str) -> bool:
     if not path.parts:
         return False
     first = path.parts[0].casefold()
-    return first in {".agents", ".claude", ".codex", ".cursor", ".gemini", ".kimi"} and (
-        path.name in AGENT_CONFIG_NAMES or path.suffix.casefold() in {".rules", ".toml"}
+    return first in {
+        ".agents",
+        ".claude",
+        ".codex",
+        ".cursor",
+        ".gemini",
+        ".kimi",
+        "agents",
+    } and (
+        path.name in AGENT_CONFIG_NAMES
+        or path.suffix.casefold() in {".rules", ".toml"}
     )
 
 
-def read_text(path: Path, max_bytes: int = 1_000_000) -> tuple[str | None, str | None]:
+def read_text(
+    path: Path, root: Path, max_bytes: int = 1_000_000
+) -> tuple[str | None, str | None]:
     try:
-        size = path.stat().st_size
+        resolved = path.resolve(strict=True)
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            return None, f"Skipped {path.name}: path resolves outside repository"
+        size = resolved.stat().st_size
         if size > max_bytes:
             return None, f"Skipped {path.name}: file is larger than {max_bytes} bytes"
-        return path.read_text(encoding="utf-8-sig", errors="replace"), None
+        return resolved.read_text(encoding="utf-8-sig", errors="replace"), None
     except OSError as error:
         return None, f"Unable to read {path}: {error}"
 
@@ -336,7 +481,11 @@ def extract_markdown_target(raw_target: str) -> str | None:
         target = target[1 : target.index(">")]
     else:
         target = target.split(maxsplit=1)[0]
-    target = unquote(target).strip()
+    try:
+        target = unquote(target, errors="strict")
+    except UnicodeDecodeError:
+        pass
+    target = target.strip()
     if not target or target.startswith("#"):
         return None
     if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target) or target.startswith("//"):
@@ -350,25 +499,31 @@ def summarize_instruction(path: Path, root: Path, kind: str) -> tuple[dict[str, 
         size = path.lstat().st_size
     except OSError:
         size = -1
-    text, warning = read_text(path, max_bytes=512_000)
+    text, warning = read_text(path, root, max_bytes=512_000)
     if warning:
         warnings.append(warning)
     headings: list[str] = []
     broken_links: list[str] = []
     outside_links: list[str] = []
+    documented_commands: list[dict[str, Any]] = []
     line_count = 0
 
     if text is not None:
         line_count = len(text.splitlines())
+        documented_commands = documented_verification_commands(text)
         for line in text.splitlines():
             match = HEADING.match(line)
             if match and len(headings) < 50:
-                headings.append(match.group(2).strip())
+                headings.append(redact_sensitive_text(match.group(2).strip()))
         for match in list(MARKDOWN_LINK.finditer(text))[:100]:
             target = extract_markdown_target(match.group(1))
             if not target:
                 continue
-            candidate = (path.parent / target).resolve(strict=False)
+            try:
+                candidate = (path.parent / target).resolve(strict=False)
+            except (OSError, RuntimeError):
+                broken_links.append(target)
+                continue
             try:
                 candidate.relative_to(root)
             except ValueError:
@@ -385,6 +540,7 @@ def summarize_instruction(path: Path, root: Path, kind: str) -> tuple[dict[str, 
             "lines": line_count,
             "symlink": path.is_symlink(),
             "headings": headings,
+            "documented_verification_commands": documented_commands,
             "broken_relative_links": sorted(set(broken_links))[:20],
             "relative_links_outside_repository": sorted(set(outside_links))[:20],
         },
@@ -392,30 +548,44 @@ def summarize_instruction(path: Path, root: Path, kind: str) -> tuple[dict[str, 
     )
 
 
-def parse_package_scripts(path: Path, root: Path) -> tuple[dict[str, Any] | None, str | None]:
-    text, warning = read_text(path, max_bytes=2_000_000)
+def parse_package_scripts(
+    path: Path, root: Path, scanned_lockfiles: set[str]
+) -> tuple[dict[str, Any] | None, str | None]:
+    text, warning = read_text(path, root, max_bytes=2_000_000)
     if warning:
         return None, warning
+
+    def reject_nonstandard_constant(value: str) -> None:
+        raise ValueError(f"Non-standard JSON constant: {value}")
+
     try:
-        data = json.loads(text or "{}")
-    except json.JSONDecodeError as error:
-        return None, f"Unable to parse {relative_path(path, root)}: {error}"
+        data = json.loads(
+            text or "{}", parse_constant=reject_nonstandard_constant
+        )
+    except (json.JSONDecodeError, ValueError):
+        return None, f"Unable to parse {relative_path(path, root)}: invalid JSON"
+    if not isinstance(data, dict):
+        return None, None
     scripts = data.get("scripts")
     if not isinstance(scripts, dict):
         return None, None
     clean_scripts = {
-        str(name): str(command)
+        str(name): redact_sensitive_text(str(command))
         for name, command in scripts.items()
         if isinstance(name, str) and isinstance(command, str)
     }
     return {
         "source": relative_path(path, root),
-        "package_manager": detect_package_manager(path.parent),
-        "scripts": dict(sorted(clean_scripts.items()))[:100],
+        "package_manager": detect_package_manager(
+            path.parent, root, scanned_lockfiles
+        ),
+        "scripts": dict(sorted(clean_scripts.items())[:100]),
     }, None
 
 
-def detect_package_manager(directory: Path) -> str | None:
+def detect_package_manager(
+    directory: Path, root: Path, scanned_lockfiles: set[str]
+) -> str | None:
     for name, manager in (
         ("pnpm-lock.yaml", "pnpm"),
         ("yarn.lock", "yarn"),
@@ -423,62 +593,184 @@ def detect_package_manager(directory: Path) -> str | None:
         ("bun.lockb", "bun"),
         ("package-lock.json", "npm"),
     ):
-        if (directory / name).exists():
+        if relative_path(directory / name, root) in scanned_lockfiles:
             return manager
     return None
 
 
-def parse_task_targets(path: Path, root: Path) -> tuple[dict[str, Any] | None, str | None]:
-    text, warning = read_text(path)
+def parse_taskfile_targets(text: str) -> list[str]:
+    targets: set[str] = set()
+    in_tasks = False
+    target_indent: int | None = None
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not in_tasks:
+            if line == line.lstrip() and re.fullmatch(
+                r"tasks\s*:\s*(?:#.*)?", line
+            ):
+                in_tasks = True
+            continue
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line.startswith("\t") or line == line.lstrip():
+            break
+
+        indent = len(line) - len(line.lstrip(" "))
+        if target_indent is None:
+            target_indent = indent
+        match = re.match(r"^ +([A-Za-z0-9_.-]+)\s*:", line)
+        if not match:
+            continue
+        if indent == target_indent:
+            targets.add(match.group(1))
+
+    return sorted(targets)[:200]
+
+
+def parse_task_targets(
+    path: Path, root: Path
+) -> tuple[dict[str, Any] | None, str | None]:
+    text, warning = read_text(path, root)
     if warning:
         return None, warning
-    pattern = JUST_TARGET if path.name.casefold() == "justfile" else MAKE_TARGET
-    targets: set[str] = set()
-    for line in (text or "").splitlines():
-        if line.startswith((" ", "\t", "#")):
-            continue
-        match = pattern.match(line)
-        if match and not match.group(1).startswith("."):
-            targets.add(match.group(1))
+    name = path.name.casefold()
+    if name in TASKFILE_NAMES:
+        runner = "task"
+        targets = parse_taskfile_targets(text or "")
+    else:
+        runner = "just" if name == "justfile" else "make"
+        pattern = JUST_TARGET if runner == "just" else MAKE_TARGET
+        target_set: set[str] = set()
+        for line in (text or "").splitlines():
+            if line.startswith((" ", "\t", "#")):
+                continue
+            match = pattern.match(line)
+            if match and not match.group(1).startswith("."):
+                target_set.add(match.group(1))
+        targets = sorted(target_set)[:200]
     if not targets:
         return None, None
     return {
         "source": relative_path(path, root),
-        "runner": "just" if path.name.casefold() == "justfile" else "make",
-        "targets": sorted(targets)[:200],
+        "runner": runner,
+        "targets": targets,
     }, None
 
 
+def strip_toml_comment(line: str) -> str:
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(line):
+        if quote == '"':
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quote = None
+        elif quote == "'":
+            if character == "'":
+                quote = None
+        elif character in {'"', "'"}:
+            quote = character
+        elif character == "#":
+            return line[:index].strip()
+    return line.strip()
+
+
+def parse_toml_string(raw: str) -> str | None:
+    value = raw.strip()
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, str) else None
+    if len(value) >= 2 and value.startswith("'") and value.endswith("'"):
+        return value[1:-1]
+    return None
+
+
+def parse_toml_key(raw: str) -> str | None:
+    key = raw.strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]+", key):
+        return key
+    return parse_toml_string(key)
+
+
 def parse_python_scripts(path: Path, root: Path) -> tuple[dict[str, Any] | None, str | None]:
-    if tomllib is None:
-        return None, "Python is too old to parse pyproject.toml without a dependency"
-    try:
-        with path.open("rb") as stream:
-            data = tomllib.load(stream)
-    except (OSError, tomllib.TOMLDecodeError) as error:
-        return None, f"Unable to parse {relative_path(path, root)}: {error}"
-    scripts = data.get("project", {}).get("scripts", {})
-    if not isinstance(scripts, dict) or not scripts:
+    text, warning = read_text(path, root, max_bytes=2_000_000)
+    if warning:
+        return None, warning
+
+    scripts: dict[str, str] = {}
+    in_scripts = False
+    saw_scripts = False
+    for original_line in (text or "").splitlines():
+        line = strip_toml_comment(original_line)
+        if not line:
+            continue
+        table = re.fullmatch(r"\[\s*([^\]]+?)\s*\]", line)
+        if table:
+            in_scripts = table.group(1).strip() == "project.scripts"
+            saw_scripts = saw_scripts or in_scripts
+            continue
+        if not in_scripts:
+            continue
+        assignment = re.fullmatch(r"(.+?)\s*=\s*(.+)", line)
+        if not assignment:
+            return (
+                None,
+                f"Unable to parse {relative_path(path, root)}: "
+                "unsupported project.scripts entry",
+            )
+        key = parse_toml_key(assignment.group(1))
+        value = parse_toml_string(assignment.group(2))
+        if key is None or value is None:
+            return (
+                None,
+                f"Unable to parse {relative_path(path, root)}: "
+                "unsupported project.scripts entry",
+            )
+        scripts[key] = redact_sensitive_text(value)
+
+    if not saw_scripts or not scripts:
         return None, None
     return {
         "source": relative_path(path, root),
-        "scripts": {
-            str(name): str(command)
-            for name, command in sorted(scripts.items())
-            if isinstance(name, str) and isinstance(command, str)
-        },
+        "scripts": dict(sorted(scripts.items())),
     }, None
 
 
 def git_metadata(root: Path) -> dict[str, Any]:
+    git_environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.upper().startswith("GIT_")
+    }
+    git_environment["GIT_OPTIONAL_LOCKS"] = "0"
+    git_environment["GIT_TERMINAL_PROMPT"] = "0"
+    git_environment["GIT_PAGER"] = "cat"
+
     def run(*arguments: str) -> subprocess.CompletedProcess[str]:
         try:
             return subprocess.run(
-                ["git", "-C", str(root), *arguments],
+                [
+                    "git",
+                    "-c",
+                    "core.fsmonitor=false",
+                    "-c",
+                    "core.untrackedCache=false",
+                    "-C",
+                    str(root),
+                    *arguments,
+                ],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=git_environment,
                 timeout=5,
                 check=False,
             )
@@ -487,29 +779,45 @@ def git_metadata(root: Path) -> dict[str, Any]:
 
     top_level = run("rev-parse", "--show-toplevel")
     if top_level.returncode != 0:
-        return {"is_repository": False}
+        return {
+            "is_repository": False,
+            "worktree_state": "not_applicable",
+            "dirty_path_count": None,
+            "dirty_paths": [],
+            "dirty_paths_truncated": None,
+        }
 
     git_root = Path(top_level.stdout.strip()).resolve()
+    try:
+        root.relative_to(git_root)
+    except ValueError:
+        return {
+            "is_repository": False,
+            "repository_state": "unverified",
+            "repository_state_reason": "git_root_outside_target_scope",
+            "worktree_state": "unverified",
+            "worktree_state_reason": "git_root_outside_target_scope",
+            "dirty_path_count": None,
+            "dirty_paths": [],
+            "dirty_paths_truncated": None,
+        }
+
     branch_result = run("symbolic-ref", "--quiet", "--short", "HEAD")
     if branch_result.returncode != 0:
         branch_result = run("rev-parse", "--short", "HEAD")
-    status_result = run("status", "--porcelain=v1", "--untracked-files=normal")
-    status_lines = status_result.stdout.splitlines() if status_result.returncode == 0 else []
-    dirty_paths: list[str] = []
-    for line in status_lines[:100]:
-        path_text = line[3:] if len(line) > 3 else line
-        if " -> " in path_text:
-            path_text = path_text.split(" -> ", 1)[1]
-        dirty_paths.append(path_text.strip('"'))
 
     return {
         "is_repository": True,
         "root": str(git_root),
         "target_matches_git_root": git_root == root,
-        "branch_or_commit": branch_result.stdout.strip() or None,
-        "dirty_path_count": len(status_lines),
-        "dirty_paths": dirty_paths,
-        "dirty_paths_truncated": len(status_lines) > len(dirty_paths),
+        "branch_or_commit": (
+            branch_result.stdout.strip() if branch_result.returncode == 0 else None
+        ),
+        "worktree_state": "unverified",
+        "worktree_state_reason": "content_comparison_skipped_to_avoid_git_filters",
+        "dirty_path_count": None,
+        "dirty_paths": [],
+        "dirty_paths_truncated": None,
     }
 
 
@@ -535,7 +843,9 @@ def ecosystems_for(paths: list[str]) -> list[str]:
 
 
 def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str, Any]:
-    files, skipped, warnings, truncated = walk_repository(root, max_files, include_vendored)
+    files, skipped, skipped_symlinks, warnings, truncated = walk_repository(
+        root, max_files, include_vendored
+    )
     relatives = [relative_path(path, root) for path in files]
     language_counts = Counter(
         language
@@ -580,7 +890,7 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
     for relative in manifests:
         path = path_by_relative[relative]
         if path.name == "package.json" and len(package_scripts) < 50:
-            parsed, warning = parse_package_scripts(path, root)
+            parsed, warning = parse_package_scripts(path, root, set(lockfiles))
             if parsed:
                 package_scripts.append(parsed)
             if warning:
@@ -611,6 +921,15 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
                 verification_commands.append(
                     {"source": runner["source"], "name": target, "definition": runner["runner"]}
                 )
+    for instruction in instruction_summaries:
+        for command in instruction["documented_verification_commands"]:
+            verification_commands.append(
+                {
+                    "source": instruction["path"],
+                    "name": f"documented:L{command['line']}",
+                    "definition": command["definition"],
+                }
+            )
     verification_commands = verification_commands[:250]
 
     root_instructions = [
@@ -619,6 +938,7 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
     broken_link_count = sum(
         len(item["broken_relative_links"]) for item in instruction_summaries
     )
+    version_control = git_metadata(root)
     diagnostics: list[str] = []
     if not files:
         diagnostics.append("empty_repository")
@@ -643,10 +963,14 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
         diagnostics.append("no_high_signal_architecture_or_testing_doc_detected")
     if truncated:
         diagnostics.append("scan_truncated_at_file_limit")
+    if version_control.get("worktree_state") == "unverified":
+        diagnostics.append("git_worktree_state_unverified")
 
     top_level = []
     try:
-        top_level = sorted((entry.name for entry in root.iterdir()), key=str.casefold)[:200]
+        top_level = sorted(
+            (entry.name for entry in root.iterdir()), key=portable_name_key
+        )[:200]
     except OSError as error:
         warnings.append(f"Unable to list repository root: {error}")
 
@@ -654,14 +978,16 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
         "schema_version": SCHEMA_VERSION,
         "root": str(root),
         "scan": {
+            "implementation": "python",
             "files_seen": len(files),
             "max_files": max_files,
             "truncated": truncated,
             "include_vendored": include_vendored,
             "skipped_directories": skipped[:MAX_REPORTED_PATHS],
+            "skipped_symlinks": skipped_symlinks[:MAX_REPORTED_PATHS],
             "warnings": sorted(set(warnings))[:100],
         },
-        "version_control": git_metadata(root),
+        "version_control": version_control,
         "project": {
             "top_level_entries": top_level,
             "ecosystems": ecosystems_for(manifests),
@@ -705,6 +1031,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Files scanned: {report['scan']['files_seen']}",
         f"- Ecosystems: {', '.join(project['ecosystems']) or 'none detected'}",
         f"- Git repository: {report['version_control'].get('is_repository', False)}",
+        "- Git worktree state: "
+        f"{report['version_control'].get('worktree_state', 'unverified')}",
         "",
         "## Agent surfaces",
         "",

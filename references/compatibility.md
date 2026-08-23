@@ -30,12 +30,60 @@ Build a small conflict table when sources overlap. Resolve identical guidance
 to one owner, preserve true provider differences, and remove a duplicate only
 after proving no tool depends on its current contents.
 
+## Verify effective host capabilities
+
+Keep model, provider, host, and repository capabilities separate. A model name
+does not determine which instruction files are loaded, whether a tool call needs
+approval, or whether writes are sandboxed. For each host that materially affects
+the requested workflow, verify only the relevant questions:
+
+| Capability | Evidence to resolve |
+| --- | --- |
+| Context delivery | Discovery paths, precedence, byte limits, nested scope, trust behavior, and whether changes reload during a live session or only after an explicit reload or new session. |
+| Tool authority | Which tools are visible, which calls are filtered, and whether a "read-only" or Plan state changes actual tool execution or only adds instructions. |
+| Approval and isolation | Whether approval, command policy, filesystem sandbox, network boundary, and operating-system isolation are independent; which one actually blocks the action. |
+| Hooks and policy | The event boundary, active configuration tier, argument scope, timeout behavior, and whether errors fail closed, ask a person, or continue. |
+| Session continuity | What survives compaction, resume, process failure, and a new session; whether an interrupted external effect is known, unknown, or safely retryable. |
+| Delegation | Child context, tool and authority inheritance, workspace/process isolation, concurrency limits, result provenance, and integration ownership. |
+| Human interaction | How clarification, rejection feedback, plan decisions, product acceptance, and consequential release authority reach the responsible person. |
+
+Classify a consequential control by what actually supplies it:
+
+- `advisory`: prompt, instruction, convention, or review guidance interpreted
+  by a model or person;
+- `host-controlled`: tool visibility, policy, approval, Hook, or process control
+  enforced by the active Agent host;
+- `isolated`: filesystem, network, credential, container, VM, or operating-system
+  boundary outside model cooperation;
+- `repository-enforced`: deterministic test, Lint, type, schema, task, or CI gate;
+- `external-governance`: branch protection, deployment control, service policy,
+  or authorized human decision outside the repository.
+
+These are provenance labels, not a universal strength ranking. A test can enforce
+a code invariant but cannot sandbox a shell; a sandbox can restrict effects but
+cannot decide product acceptance. Record the scope and failure behavior instead
+of replacing them all with "hard" or "safe."
+
+Do not infer activation from a filename. Confirm that the current product and
+configuration tier load the file and that a safe representative rule takes
+effect. If verification would itself require a dangerous action, leave the
+control `unverified` and state what non-destructive or authorized check can
+resolve it. When instructions change but the host only loads them at session
+start or on explicit reload, make that refresh boundary visible in the handoff;
+do not assume the currently running model has seen its own edit.
+
 ## Skills, prompts, and commands
 
 Use a repository-local skill for a recognizable, repeated workflow with its own
 trigger and success criteria. Use a prompt or command for a lightweight manual
 shortcut. Keep general project facts in repository instructions or maintained
 docs, not inside every skill.
+
+Skill activation and invocation syntax vary by host. Keep the core description
+useful for automatic discovery while also supporting whatever explicit selector
+the host provides. Treat host-specific metadata as an optional compatibility
+surface, not as core workflow policy, and do not claim host support without
+testing its actual discovery and resource-loading behavior.
 
 Discovery paths and frontmatter rules vary by agent. Install or mirror a skill
 only in paths documented for the tools the repository actually uses. If one
@@ -58,7 +106,8 @@ documents. Add them only when all of the following are true:
 - an ordinary test, lint rule, task runner, or CI check would not be simpler.
 
 Keep security approval rules separate from coding conventions. Never weaken a
-user or organization policy to make an automated workflow smoother.
+user or organization policy to make an automated workflow smoother. A Hook that
+warns and continues must not be documented as a blocking control.
 
 ## CI and orchestration
 
@@ -66,10 +115,13 @@ CI is appropriate for reproducible gates that must protect shared branches.
 Before adding or changing it, prove the underlying local command, understand
 credentials and platform requirements, and reuse existing workflow conventions.
 
-Parallel agents and worktrees improve throughput only after tasks are separable
-and verification is reliable. Document repository-specific worktree setup or
-shared-resource hazards when they exist. Do not prescribe a fixed number of
-agents or introduce orchestration infrastructure during ordinary bootstrap.
+Use the readiness boundary in
+[delivery-workflow.md](delivery-workflow.md#parallel-readiness) before proposing
+parallel agents or worktrees. This reference adds only host compatibility: verify
+how each supported host loads instructions in worktrees, isolates processes and
+approvals, and hands integration ownership back. Do not assume orchestration
+semantics transfer between hosts or introduce infrastructure during ordinary
+bootstrap.
 
 ## Choosing a larger product surface
 

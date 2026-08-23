@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agentize"
+  short_description: "Build a human-in-the-loop repository workflow"
+  default_prompt: "Use $agentize to make this repository ready for reliable human-agent engineering with the smallest evidence-backed changes."

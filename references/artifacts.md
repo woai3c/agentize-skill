@@ -2,6 +2,18 @@
 
 Use existing names and locations when they already have clear ownership. The
 patterns below are options, not a scaffold to generate in every repository.
+For the responsibility and transition rules behind work definition, Agent
+verification, Human validation, delivery, observation, and learning, read
+[delivery-workflow.md](delivery-workflow.md) when those capabilities need repair.
+
+## Scope boundary
+
+If the user explicitly requests an audit or report only, create or modify no
+target artifact. Otherwise choose artifacts from direct repository evidence and
+the requested agent-ready outcome; do not require the user to select an internal
+mode. A new tool or automation surface must solve a consequential demonstrated
+gap, be proportionate to the repository, and remain within normal permission and
+external-action boundaries.
 
 ## Root instruction source
 
@@ -69,6 +81,25 @@ Prefer the repository's existing domain docs, schemas, and acceptance tests.
 Never reverse-engineer sensitive business policy from a few incidental code
 paths and present it as authoritative.
 
+## Work definition and planning
+
+Use the project's existing issue tracker, specification, proposal, PR, or task
+format as the owner of intent. Repair its repository-visible template or guidance
+when a consequential gap in outcome, constraint, acceptance, scope, risk, or
+unresolved-question context prevents reliable execution. Repeated failures make
+the investment stronger evidence but are not required when the user directly
+requested this capability and the missing contract is already demonstrable.
+
+Plans should describe a proposed route and verification strategy, not replace
+the desired outcome. Persist a plan only when coordination, review, resumption,
+or a consequential tradeoff benefits from it. Do not require a plan document for
+small, obvious, reversible work or create a repository-local task system when an
+existing external system is authoritative.
+
+Agentize may draft missing structure and precise questions. It must not invent
+business meaning, mark its own proposal accepted, or convert an implementation-
+derived test into acceptance criteria without independent intent evidence.
+
 ## Verification ladder
 
 Describe verification from fast and local to broad and expensive:
@@ -80,13 +111,63 @@ Describe verification from fast and local to broad and expensive:
    checks when the affected surface warrants them;
 5. CI or human review signals that cannot be reproduced locally.
 
+Do not make browser verification mandatory merely because a repository has a
+Web/UI surface. Persist browser or E2E instructions only when a safe, repeatable
+project workflow already exists or establishing that capability directly serves
+the current request.
+
 For each non-obvious command, capture what it proves, where to run it, required
 environment, expected cost, and meaningful exclusions. Do not equate a passing
 unit suite with verified user behavior.
 
+When the project uses a durable handoff or review format, keep Agent verification
+evidence separate from Human validation: record checks actually run, failures,
+exclusions, remaining observations or decisions, and evidence provenance when
+it matters. A result from the implementing Agent, a reviewer Agent, CI, a policy
+gate, and an authorized person must not be flattened into one "verified" flag.
+Do not add a second handoff template when the existing PR, issue, or review
+system can own these fields.
+
 If a reliable command is repeatedly assembled by hand, add a small script or
 task-runner target and test it. If the command is already stable in CI, expose a
 targeted local equivalent rather than duplicating the pipeline.
+
+## Human validation and risk ownership
+
+Persist project-specific review ownership and high-consequence triggers only
+when they are not already clear. Suitable owners may include existing review
+guidance, `CODEOWNERS`, contribution docs, security policy, migration procedure,
+release checklist, or a thin PR template. Link rather than duplicate policy.
+
+State which outcomes require human judgment and what evidence helps that person
+decide. Do not use documentation as proof that an external approval, branch
+protection rule, or required review is actually enforced. Changing those external
+controls requires separate evidence, authorization, and an appropriate tool.
+
+Avoid a universal low/medium/high matrix. Use the repository's real risk
+language and distinguish high-consequence paths from routine reversible changes
+so that human attention is concentrated rather than applied mechanically.
+
+## Delivery, observation, and rollback
+
+For projects that ship or operate software, make the existing delivery and
+operational paths discoverable when that knowledge materially affects safe Agent
+work. Depending on the project, useful owned artifacts include:
+
+- merge and release prerequisites;
+- rollout, migration, compatibility, and rollback procedures;
+- safe staging or smoke checks;
+- links or commands for relevant logs, metrics, traces, alerts, or user signals;
+- status, idempotency, or recovery paths for an external action whose outcome
+  may be unknown after interruption;
+- named external systems, permissions, and human owners where repository-local
+  automation cannot perform the step.
+
+Document what a signal establishes and any safe boundary around obtaining it.
+Do not place credentials, private endpoints, or production data in agent-facing
+prose. Do not create deployment or observability infrastructure merely to make
+the workflow look complete, and do not add these artifacts to projects for which
+shipping and operation are not applicable.
 
 ## Knowledge gaps
 
@@ -128,6 +209,17 @@ Choose the strongest economical representation for a learned constraint:
 | Repository-specific judgment | Concise instruction with rationale or link |
 | Non-obvious tradeoff | Decision record |
 | Private live system fact | Authorized connector or MCP tool, not copied prose |
+
+A new mechanical feedback loop must satisfy the scope boundary above. A test
+must protect intended behavior supported by a specification, stable contract,
+user confirmation, or multiple direct signals; implementation behavior alone
+is not sufficient evidence that the behavior should be preserved.
+
+Keep an unconfirmed lesson as a candidate in the repository's existing Issue,
+review, incident, or feedback system. Before promotion, record the evidence for
+generalizing it and the owner who can confirm semantic meaning. Only confirmed
+lessons move into a durable rule or executable check; Agent reflection, a raw
+rating, or one reviewer finding does not apply itself.
 
 Hooks are appropriate for lifecycle enforcement that must run mechanically and
 has a stable, trusted command. Instructions are appropriate when judgment is
