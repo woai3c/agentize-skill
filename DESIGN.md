@@ -1,4 +1,4 @@
-# Agentize 可实施设计
+# Agentize Skill 可实施设计
 
 状态：仓库侧实施基线已交付；跨宿主完整验收尚未完成。
 
@@ -88,6 +88,7 @@ agentize/
 ├── references/
 ├── scripts/
 └── tests/
+    └── test_scanners.py
 ```
 
 - `SKILL.md` 的 `name` 和 `description` 负责让支持 Agent Skills 的宿主发现何时使用
@@ -437,90 +438,18 @@ Agentize 的核心不需要统一命令机制。对外声明某个宿主受支�
 Skill 安装是开发和本地使用方式；未来若确有分发需求，可以从同一规范源生成
 Plugin 或宿主包。未实际生成和测试的分发物不能在 README 中宣称已支持。
 
-## 10. 测试方案
+## 10. 验证策略
 
-### 10.1 扫描器
-
-- 自动化 fixture 分别直接调用已交付的 Python 与 Node.js 扫描器，并在两者都可用的
-  测试环境中检查共享 Schema 和规范化后的语义 parity。
-- Node-only、Python-only 和两者均无属于隔离运行时前向测试矩阵；只有保存实际环境与
-  执行证据后，才能把对应路径记为已验收。
-- fixture 覆盖空白、部分、冲突、成熟、Monorepo、大仓库、Unicode/空格路径、Git
-  子目录范围、vendored 目录、权限错误、截断、畸形配置、循环链接和仓库外符号链接。
-- 扫描器不执行项目代码；Git fixture 证明仓库配置的 fsmonitor 与 clean/process filter
-  不会运行，继承的仓库选择环境变量不能把身份查询重定向到范围外目标。工作树内容状态
-  保持 `unverified`；Git 缺失与损坏配置会得到身份 `unverified`，而不是“非仓库”。严格
-  JSON、Taskfile、精确文件上限等边界通过双运行时回归测试。
-
-### 10.2 仓库行为
-
-- 空白、部分、混合和成熟仓库分别得到最小、有证据的结果。
-- 用户要求只审计时目标零修改且默认零项目命令执行；用户要求 agentize 时不要求额外
-  选择内部模式。
-- 通用 Agent 行为不会被机械写入目标仓库。
-- 新工具、测试、E2E、Hook 和 CI 只在有证据、与请求相关且收益明确时出现；文件或
-  Framework 存在不自动把相应能力标记为 `READY`。
-- Web/UI、后端、CLI、库和纯文档仓库得到与自身验证面相称的结果。
-- 未知业务规则不会依据单一当前实现生成规范或测试。
-- 工作定义来自现有权威系统；Goal、Success Criteria 或 Acceptance Criteria 关键缺失时，
-  Agentize 生成精确问题而不是替人确认业务含义。
-- 非琐碎任务在 Execute 前具有可观测的 Plan 与 Human Plan Review 路径；Human Feedback
-  会触发重新 Explore/Re-plan。显然、低风险、可逆任务可以走定义明确的 fast path。
-- 本地实现循环默认运行 Fast Verification；Full E2E 属于 MR/PR Full CI，不在每次编辑后
-  重跑，除非项目已有廉价且聚焦的子集并明确把它归入快速检查。
-- E2E 与真实 Browser Business Flow Validation 分开声明和取证；Browser Controller、
-  安全启动路径、测试身份/数据、认证、环境和当前宿主范围都有证据时才标记 `READY`。
-  无法安全运行时不会安装工具、使用生产凭据或伪造浏览器验证，而是记录
-  `NOT EXECUTED`、影响、人工 Fallback 和 Setup Guide。
-- Agent Verification 与 Human Validation 在产物和交接中可区分；绿色检查不会被报告
-  为产品验收。
-- 使用 reviewed branches 的项目在 Fast Verification 与适用的 Targeted Browser
-  Verification 后进入 MR/PR；实现 Agent 自审、独立 AI Review、Full CI、Human Technical
-  Review 与 Human Validation 保留不同 provenance。Full E2E 只在其命令、环境、Runner、
-  数据与认证路径均有证据时成为真实 Gate，Review/CI/验收失败都会返回修改与再验证。
-- 提示指导、工具过滤、审批、Sandbox、仓库检查和外部治理不会被压成一个
-  “已强制执行”状态；失效或未加载的 Provider 配置不能成为安全证据。
-- 只在新会话或显式 Reload 时加载的指令变更，会在交接中保留刷新要求。
-- 高风险变化保留有权的人类决策点，低风险可逆变化不被强制套用同等审批仪式。
-- 部署服务只在有真实路径时获得交付、回滚和观察指导；不适用的仓库不会得到虚构的
-  生产 Harness。
-- Continuous Knowledge Capture 是主要路径：开发过程中确认的 Durable、Non-obvious、
-  Reusable 知识与必要的可执行约束进入当前分支/MR/PR；未确认推断继续标记候选而不是
-  成为永久政策。
-- Post-Merge Knowledge Audit 只审计 AI/Human Review、Full CI、Human Validation 和最终
-  返工中遗漏的晚期知识，不重新总结整个变更；没有合格遗漏时零修改。
-- Candidate Knowledge 标记 Observed/Inferred/Unknown；自动化不直接写默认分支，经独立
-  Knowledge MR/PR 或等价人工评审后才固化为最小文档或可执行约束。
-- GitHub/GitLab/Webhook 自动 Post-Merge Audit 只有在真实平台、合并事件、上下文收集、
-  Headless Agent Runner、项目已选择的模型接入、凭据、权限、成本、数据边界、失败行为和
-  Knowledge MR/PR 路径都已验证时才标记 `READY`；仓库侧已安装但仍需外部配置时标记
-  `SETUP REQUIRED`，没有可行实现路径时标记 `NOT AVAILABLE`。人工检查路径单独定级，
-  不能让自动能力变成 Ready。
-- 外部操作在 dispatch 后丢失结果时不会被自动当作失败重试；状态检查、幂等性和人类
-  确认按项目真实能力决定。
-- 多 Agent 或 Worktree 只在可分离任务、可靠验证和共享资源边界有证据时出现。
-- 非审计运行留下 Harness Capability Report，逐项区分理想流程、当前 Evidence、Operational
-  Status、Setup Guide/Fallback 与单次任务的 `PASSED`、`FAILED`、`NOT EXECUTED` 或
-  `NOT APPLICABLE`；缺失、冲突或未验证的请求关键能力不会被描述成 all gates passed 或
-  完全 agent-ready。
-- 二次运行在证据不变时产生零实质 diff。
-- 脏工作区无法安全确认时明确报告 `unverified`；已知危险命令、部分写入和验证失败被
-  准确报告。
-- 卸载 Agentize 后，fixture 仓库仍能被普通 Agent 理解、修改和验证。
-
-### 10.3 跨宿主
-
-- 对每个公开支持的宿主运行相同的代表性请求和隔离 fixture。
-- 比较能力结果和目标产物，不要求宿主 UI、调用语法或交接措辞一致。
-- 某宿主缺少写入或进程能力时，准确降级并记录限制，不伪造完整支持。
-
-`tests/behavior-cases.md` 是跨模型、跨宿主的前向测试协议，不因文件存在就视为通过。
-行为验收必须保存或引用目标宿主、模型/版本、隔离 fixture、工具/命令轨迹、前后状态、
-实际产物和交接结果；评价行为而不是固定措辞或固定文件列表。扫描器单元测试不能替代
-这些证据，前向测试也不能替代确定性脚本回归。
-
-当前只保存了一条修订后 Codex audit-only 前向记录。它能证明该快照在该环境中遵守静态
-审计边界，不能证明其他行为案例、运行时矩阵、宿主或模型版本已经通过。
+- `tests/test_scanners.py` 使用 Python 标准库创建隔离 fixture，并直接调用 Python 与
+  Node.js 扫描器。它覆盖扫描边界、脱敏、符号链接、文件上限、Taskfile、严格 JSON、
+  Git 身份范围、fsmonitor/filter 禁止执行、继承环境隔离和共享 Schema 语义 parity。
+- 测试 Harness 需要 Python；Node.js 可用时同时检查 Node 实现。这个开发要求不改变
+  Agentize 的运行时回退：使用者可以只有 Node.js、只有 Python，或由宿主只读工具接管。
+- Skill 结构使用 `skill-creator` validator、双扫描器自扫描、链接/差异检查和人工语义
+  复核。不要为固定措辞、标题或换行建立脆弱的单元测试。
+- 仓库不交付跨宿主行为 Eval Harness，也不保存过期的单次 Agent 运行记录。未来如果
+  声明某个宿主或平台受支持，应在独立隔离环境中保存可复现的宿主版本、模型版本、
+  fixture、工具轨迹、前后状态和实际产物；扫描器回归不能替代这类证据。
 
 ## 11. 实施顺序
 
@@ -532,17 +461,16 @@ Plugin 或宿主包。未实际生成和测试的分发物不能在 README 中�
    Outcome 的分层契约，并生成 Harness Capability Report。
 4. 固定自适应产物选择、Observed/Inferred/Unknown 知识协议、Knowledge MR/PR 与
    Documentation-to-Executable-Constraints 路由。
-5. 建立四类仓库、计划返工、概念错误、快速/完整验证、能力缺失、Review/CI、风险、持续
-   知识捕获和合并后兜底审计的隔离前向测试。
-6. 维护 Python 与 Node.js 扫描器的共享 Schema、fixture、边界和语义 parity。
-7. 按实际需求验证宿主和 GitHub/GitLab 等平台兼容性；不预建空适配器或选择模型厂商。
-8. 只有出现真实分发需求时才生成和测试 Plugin 或宿主包。
+5. 维护 Python 与 Node.js 扫描器的共享 Schema、fixture、安全边界和语义 parity。
+6. 对外声明宿主或 GitHub/GitLab 等平台兼容性前，单独建立可复现的隔离行为证据；不
+   预建空适配器、不保存无法代表当前版本的历史记录，也不替项目选择模型厂商。
+7. 只有出现真实分发需求时才生成和测试 Plugin 或宿主包。
 
 README 只声明已经交付并验证的能力。
 
 ## 12. 完整验收
 
-以下是发布门槛，不是当前状态声明。只有自动化检查与适用宿主的隔离前向测试都有可
+以下是发布门槛，不是当前状态声明。只有自动化检查与适用宿主的独立行为验证都有可
 复核证据，并同时满足以下条件，才可声明完整 Agentize：
 
 1. 核心 `SKILL.md`、references 和扫描器不依赖任何模型厂商或宿主命令语法。
@@ -586,9 +514,9 @@ README 只声明已经交付并验证的能力。
 23. 完成后目标仓库不包含 Agentize 运行时依赖或自动触发器。
 24. 二次运行幂等，卸载后目标仓库仍可独立使用。
 25. 每项宿主支持声明都有真实行为证据，但核心不要求所有宿主使用相同入口。
-26. README、SKILL、references、可选厂商元数据和行为案例没有能力声明冲突。
-27. 单元测试、具有实际运行记录的行为前向测试、运行时 parity、Skill 校验和
-    `git diff --check` 全部通过；行为案例清单本身不算运行记录。
+26. README、SKILL、references 和可选厂商元数据没有能力声明冲突。
+27. 扫描器回归与运行时 parity、Skill 校验、双扫描器自扫描和 `git diff --check` 全部
+    通过；任何宿主支持声明另有可复现的隔离行为证据。
 28. 重要宿主约束能说明实际消费者、执行层、范围、刷新或失败行为和验证状态；提示、
     配置文件、审批、Sandbox、CI 与 Human Validation 不被错误等同。
 29. 存在外部副作用的适用流程能区分失败与未知结果，不会在缺少状态证据时盲目重试。

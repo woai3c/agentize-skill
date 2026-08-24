@@ -1,4 +1,4 @@
-# Agentize repository guidance
+# Agentize Skill repository guidance
 
 Agentize is a reusable coding-agent skill. It audits and reconciles the durable
 workflow inside another repository; it must not become a runtime dependency of
@@ -11,9 +11,8 @@ that repository.
 - `references/`: conditional decision guidance loaded by the skill.
 - `scripts/scan_repo.py` and `scripts/scan_repo.cjs`: dependency-free,
   read-only repository inventory implementations with one shared contract.
-- `tests/`: deterministic scanner and structural tests plus behavioral cases.
-- `tests/forward-evidence/`: bounded host/model run records; one record never
-  implies general host support.
+- `tests/test_scanners.py`: deterministic scanner safety, boundary, and
+  cross-runtime parity regressions.
 - `agents/openai.yaml`: Codex and ChatGPT UI metadata.
 
 Keep the entrypoint concise. Put conditional detail in one linked reference and
@@ -38,6 +37,6 @@ specific; use the installed path or an existing interpreter with PyYAML when
 they differ. This development validator dependency is not an Agentize scanner
 runtime dependency. Do not add the local path to portable scripts or CI.
 
-When changing either scanner, add or update a behavioral test and preserve
-cross-runtime parity. When changing the workflow boundary, update
-`tests/behavior-cases.md` and keep README claims consistent with the skill.
+When changing either scanner, add or update a scanner regression and preserve
+cross-runtime parity. When changing the workflow boundary, keep `SKILL.md`,
+`DESIGN.md`, the relevant reference, and README claims consistent.

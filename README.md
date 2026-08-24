@@ -1,8 +1,8 @@
-# Agentize
+# Agentize Skill
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Agentize is a one-time AI development harness bootstrap. It turns an existing codebase into a repository where coding agents can find the right context, plan before consequential changes, implement and verify in a loop, pass through review and human validation, capture confirmed knowledge during the work, and audit late lessons after merge when that automation is actually configured.
+Agentize is a vendor-neutral coding-agent Skill and one-time AI development harness bootstrap. It turns an existing codebase into a repository where coding agents can find the right context, plan before consequential changes, implement and verify in a loop, pass through review and human validation, capture confirmed knowledge during the work, and audit late lessons after merge when that automation is actually configured.
 
 ```text
 repository -> inspect -> assess -> install or repair -> verify -> self-contained AI development harness
@@ -100,12 +100,10 @@ The repository currently includes:
 
 - the vendor-neutral Agentize Skill;
 - evidence, artifact, human-agent delivery, and multi-agent compatibility references;
-- dependency-free Python and Node.js read-only scanners with shared semantic parity tests;
-- scanner unit tests plus forward-test specifications for runtime fallback, effective enforcement, Plan Review and fast paths, capability status, Fast versus Full Verification, MR/PR and Human Validation loops, required-gate accounting, browser provenance, knowledge adoption, recovery, and post-merge audit boundaries;
-- a recorded Codex audit-only forward run that provides evidence for that case and snapshot, not every host, model, or behavior case;
+- dependency-free Python and Node.js read-only scanners plus deterministic scanner safety, boundary, and cross-runtime parity tests;
 - optional OpenAI UI metadata that is not required by the core.
 
-Public support for a particular Agent host still requires representative behavior evidence for that host's discovery, context refresh, tools, sandbox, approval, Hook, session, and delegation semantics. No installable Plugin artifact is currently shipped. The behavior-case document is a qualification protocol, not evidence that every host/model combination has passed it.
+Public support for a particular Agent host still requires separately reproducible behavior evidence for that host's discovery, context refresh, tools, sandbox, approval, Hook, session, and delegation semantics. No cross-host evaluation harness, current host qualification record, or installable Plugin artifact is shipped.
 
 ## Install and invoke
 
@@ -114,15 +112,17 @@ Public support for a particular Agent host still requires representative behavio
 The simplest setup is to give an installation-capable coding agent this repository URL:
 
 ```text
-https://github.com/woai3c/agentize
+https://github.com/woai3c/agentize-skill
 ```
 
 Suggested prompt:
 
 ```text
 Install this Agent Skill for me and make it available in all my repositories:
-https://github.com/woai3c/agentize
+https://github.com/woai3c/agentize-skill
 ```
+
+The distribution repository is named `agentize-skill`; the canonical Skill name and installation directory remain `agentize`, so invocation examples continue to use Agentize or `$agentize`.
 
 To keep it only in the current repository, ask for that explicitly. An installation-capable agent should use the current host's documented discovery mechanism, preserve the complete Skill directory, verify discovery, and report the exact path. It needs network and filesystem access, and some hosts may require a new session before a newly installed Skill appears. Inspect the source and revision before installing any third-party Skill.
 
@@ -186,7 +186,7 @@ It inventories instruction surfaces, Skills, host configuration, manifests, decl
 
 ## Development
 
-Run the local tests and inspect the Skill against itself:
+Run the scanner regression suite and inspect the Skill against itself:
 
 ```text
 python -m unittest discover -s tests -v
@@ -195,7 +195,7 @@ python scripts/scan_repo.py --root . --format markdown
 git diff --check
 ```
 
-[`DESIGN.md`](DESIGN.md) defines the product boundary and acceptance criteria. Observable expectations for repository states, runtime fallback, safety, and cross-host behavior live in [`tests/behavior-cases.md`](tests/behavior-cases.md).
+The Python `unittest` harness is a development-only dependency and exercises both scanners when Node.js is available; installing or using Agentize does not require it when the Node.js scanner or host-tool fallback is available. [`DESIGN.md`](DESIGN.md) defines the product boundary, verification strategy, and acceptance criteria.
 
 ## License
 

@@ -1,8 +1,8 @@
-# Agentize
+# Agentize Skill
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Agentize 是一次性的 AI Development Harness Bootstrap。它把现有代码库改造成这样的仓库：Coding Agent 能找到正确上下文，在重大修改前先规划，在实现与验证之间闭环，通过评审和人工验收，在开发过程中持续捕获已确认知识，并在真实配置了自动化时于合并后审计晚期遗漏。
+Agentize 是一个厂商中立的 Coding Agent Skill，也是一次性的 AI Development Harness Bootstrap。它把现有代码库改造成这样的仓库：Coding Agent 能找到正确上下文，在重大修改前先规划，在实现与验证之间闭环，通过评审和人工验收，在开发过程中持续捕获已确认知识，并在真实配置了自动化时于合并后审计晚期遗漏。
 
 ```text
 仓库 -> 检查 -> 评估 -> 安装或修复 -> 验证 -> 可独立运行的 AI 开发 Harness
@@ -100,12 +100,10 @@ Continuous Knowledge Capture 从 Specify 一直贯穿到 Merge。Ship 和生产 
 
 - 供应商中立的 Agentize Skill；
 - 证据、产物、人机协作交付和多 Agent 兼容性参考文档；
-- 无第三方依赖的 Python 和 Node.js 只读扫描器，以及共享语义一致性测试；
-- 扫描器单元测试，以及运行时回退、有效执行、Plan Review 与 fast path、能力状态、Fast 与 Full Verification、MR/PR 与 Human Validation 循环、Required Gate 计数、浏览器 Provenance、知识采纳、恢复和合并后审计边界的前向测试规范；
-- 一份已记录的 Codex 仅审计前向运行，它只为该用例和当时快照提供证据，不代表所有宿主、模型或行为用例；
+- 无第三方依赖的 Python 和 Node.js 只读扫描器，以及确定性的扫描器安全、边界和跨运行时 parity 测试；
 - 可选的 OpenAI UI 元数据，核心能力不依赖它。
 
-对某个 Agent 宿主宣称公开支持之前，仍需要该宿主在 Skill 发现、上下文刷新、工具、沙箱、审批、Hook、会话和委派语义方面的代表性行为证据。当前尚未发布可安装的 Plugin 产物。行为用例文档是资格验证协议，不是每个宿主/模型组合都已通过的证据。
+对某个 Agent 宿主宣称公开支持之前，仍需要可独立复现的行为证据，覆盖该宿主的 Skill 发现、上下文刷新、工具、沙箱、审批、Hook、会话和委派语义。当前没有交付跨宿主 Eval Harness、适用于当前版本的宿主资格记录或可安装 Plugin 产物。
 
 ## 安装与调用
 
@@ -114,15 +112,17 @@ Continuous Knowledge Capture 从 Specify 一直贯穿到 Merge。Ship 和生产 
 最简单的方式是把这个仓库地址发给具备安装能力的编程 Agent：
 
 ```text
-https://github.com/woai3c/agentize
+https://github.com/woai3c/agentize-skill
 ```
 
 建议使用以下请求：
 
 ```text
 请帮我安装这个 Agent Skill，让它在我的所有仓库中都可用：
-https://github.com/woai3c/agentize
+https://github.com/woai3c/agentize-skill
 ```
+
+用于分发的 GitHub 仓库名是 `agentize-skill`；Skill 的规范名称和安装目录仍然是 `agentize`，所以调用示例继续使用 Agentize 或 `$agentize`。
 
 如果只想在当前仓库中使用，需要在请求中明确说明。具备安装能力的 Agent 应根据当前宿主的文档选择发现路径，保留完整的 Skill 目录，验证可发现性，并报告准确的安装路径。安装需要网络和文件系统权限；部分宿主可能需要新建会话才能发现新安装的 Skill。安装任何第三方 Skill 前，都应检查其源码和安装的修订版本。
 
@@ -186,7 +186,7 @@ python scripts/scan_repo.py --root /path/to/repository --format json
 
 ## 开发
 
-运行本地测试，并用 Skill 检查它自身：
+运行扫描器回归测试，并用 Skill 检查它自身：
 
 ```text
 python -m unittest discover -s tests -v
@@ -195,7 +195,7 @@ python scripts/scan_repo.py --root . --format markdown
 git diff --check
 ```
 
-[`DESIGN.md`](DESIGN.md) 定义产品边界与验收标准。仓库状态、运行时回退、安全与跨宿主行为的可观测预期位于 [`tests/behavior-cases.md`](tests/behavior-cases.md)。
+Python `unittest` Harness 只属于开发依赖；Node.js 可用时它会同时验证两套扫描器。安装或使用 Agentize 时，只要 Node.js 扫描器或宿主工具降级路径可用，就不需要 Python 测试环境。[`DESIGN.md`](DESIGN.md) 定义产品边界、验证策略与验收标准。
 
 ## 许可证
 
