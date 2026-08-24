@@ -1,9 +1,10 @@
 # Repository assessment
 
 Use this reference to turn repository evidence into a bounded improvement plan.
-The objective is not a maximum score. It is the smallest trustworthy harness
-that lets an agent act with high autonomy, verify its work, and hand the result
-to the right human decisions without pretending those decisions were automated.
+The objective is not a maximum score. It is the smallest trustworthy,
+repository-owned harness that lets an ordinary coding agent specify, plan,
+implement, verify, review, and learn after Agentize has been removed, while
+handing real intent, risk, and acceptance decisions to the right humans.
 
 ## Evidence hierarchy
 
@@ -65,11 +66,17 @@ be strong in one, missing another, and have no need for a third.
 | Architecture context | Boundaries, dependencies, data flow, and important invariants are findable. | A stale diagram; directory tree presented as architecture; unwritten cross-module constraints. |
 | Domain context | Non-obvious business rules and vocabulary have an owned source of truth. | Rules live only in prompts, tickets, or tests; plausible facts are guessed. |
 | Work definition | Consequential work has discoverable goals, constraints, success and acceptance criteria, scope, and unresolved questions in an existing owned system. | Imperative implementation steps with no desired outcome; tests derived only from the proposed code; no owner for ambiguous intent. |
-| Verification | Fast feedback and broader confidence commands are exact and runnable. | Only "run tests"; one full-suite command for every change; green checks that do not cover user behavior. |
+| Planning and plan review | Non-trivial work produces a scoped, evidence-backed plan and has a real route for Human Plan Review; a bounded fast path exists for obvious low-risk work. | The Agent edits before surfacing assumptions; silence is approval; every typo requires heavyweight ceremony. |
+| Fast verification | Relevant Unit and Integration tests, typecheck, Lint, and necessary build commands are exact, safe, and cheap enough for the implementation loop. | Only "run tests"; the full E2E suite is required after every edit; commands need undocumented state. |
+| Browser business verification | Applicable Web/UI work has an Agent-accessible browser controller, safe application start path, test identity/data, authentication setup, a focused Acceptance Criteria flow, and evidence bound to the tested change, environment, and precise state predicates. | E2E is relabeled as browser verification; a host tool is assumed available to every future Agent; a fixed delay, ambiguous text match, or screenshot without provenance is treated as proof; production credentials or ad hoc clicks are required. |
 | Validation ownership | Agent evidence and human acceptance are distinct, and risk determines who must decide what. | Green CI is treated as product approval; an agent accepts its own interpretation; every change gets the same ceremony. |
-| Change workflow | An agent can explore, plan, implement, retest, review, and hand off without manual copy-paste. | Commands require undocumented setup; no way to reproduce CI; no evidence or human-decision expectations. |
+| Change workflow | An agent can explore, plan, implement, debug, retest, and hand off through explicit correction loops without Agentize. | Commands require undocumented setup; feedback has no return path; future sessions depend on the bootstrap chat. |
+| MR/PR review and full CI | Reviewed-branch projects distinguish implementing-Agent evidence, independent AI review where configured, full CI including full E2E where available, risk-based technical review, and Human Validation. Every applicable required gate has explicit result accounting. | An Agent approves itself; full E2E is claimed from framework presence; a YAML file is assumed active without a runner or permissions; a green aggregate ignores a failed, cancelled, missing, or unexpectedly skipped required result. |
 | Delivery and observation | Applicable merge, release, rollback, operational checks, and success signals are discoverable with their owners and permissions. | Deployment is mixed into routine checks; no rollback or success signal; production access is assumed. |
-| Feedback retention | Repeated mistakes become durable constraints or executable checks. | The same review comment recurs; instructions grow while tests and linters do not. |
+| Continuous knowledge capture | During implementation, authoritative durable, non-obvious, reusable knowledge is routed into the current change and the smallest long-term owner. | Every note is deferred until merge; human corrections remain only in chat; unconfirmed inference becomes policy. |
+| Post-merge knowledge audit | A configured merge trigger can inspect only late lifecycle evidence and open a separate human-reviewed knowledge change when continuous capture missed something. | The audit re-summarizes everything; instructions are mistaken for a trigger; automation writes directly to the default branch. |
+| Knowledge provenance | Observed, Inferred, and Unknown claims retain evidence, confidence where relevant, impact, and decision ownership. | Model interpretation is presented as fact; current behavior silently becomes a business rule. |
+| Knowledge adoption | Feedback-derived knowledge has authoritative semantic meaning, final-state evidence of adoption, and a recorded disposition before promotion. | A comment, resolved thread, “fixed” claim, same-file edit, or merge is treated as proof that the proposed lesson was adopted. |
 | Parallel readiness | When parallel work is actually used, tasks, worktrees, shared resources, and integration ownership are separable. | More agents are added before verification is reliable; sessions share ports, state, or generated files without coordination. |
 | Host enforcement | Consequential restrictions identify their real consumer, enforcement layer, failure behavior and tested scope. | Prompt-only guidance is called a sandbox; an unused policy file is called enforced; approval, review and product acceptance are conflated. |
 | Safety and boundaries | Destructive, costly, credentialed, generated, and release paths are clear. | Blanket prohibitions; copied secrets; release commands mixed into routine verification. |
@@ -87,23 +94,50 @@ Use these statuses:
 - `not_applicable`: direct evidence shows the capability is outside this
   repository or request, so its absence is not a gap.
 
-Classify capabilities independently; do not collapse them into a score. An
-Agentize run can finish honestly with unresolved work, but if a request-critical
-capability remains `missing`, `conflicting`, or `unverified` without a safe
-human decision path, the handoff must describe the repository as only partially
-prepared and must not claim it is fully agent-ready. This is an outcome rule,
-not another user-selectable mode.
+### Operational capability status
+
+These assessment states describe evidence quality. They do not tell a developer
+whether a capability can currently run. Map each material capability separately
+to one operational status in the final Harness Capability Report:
+
+| Operational status | Meaning |
+| --- | --- |
+| `READY` | The complete path and its prerequisites are configured for the named scope, and a safe representative check or direct platform evidence verifies it. |
+| `PARTIAL` | A useful subset works, but one or more named parts or scopes do not. State exactly what works and what fallback applies. |
+| `SETUP REQUIRED` | Agentize installed or documented the repository-side path, but a named human action, secret, account, permission, external setting, or environment is still required. It is not ready until verified. |
+| `NOT AVAILABLE` | No usable path is configured and Agentize could not safely establish one within scope. Give an evidence-backed option, not a promise. |
+| `UNVERIFIED` | Configuration appears to exist, but effective activation or behavior could not be safely proven. |
+| `NOT APPLICABLE` | Direct evidence shows the capability does not apply to this repository or scope. |
+
+Capability status is not a task result. Status is scoped. `AI Browser
+Verification: READY (Codex with Browser MCP)`
+does not mean it is ready in Claude Code, a headless CI runner, or every future
+host. `READY` describes capability availability, not whether a check ran for the
+current task.
+
+For task execution, report a separate outcome: `PASSED`, `FAILED`, `NOT EXECUTED`,
+or `NOT APPLICABLE`. A `NOT EXECUTED` result includes the capability status,
+reason, consequence, and fallback or human action. Never turn `SETUP REQUIRED`,
+`NOT AVAILABLE`, or `UNVERIFIED` into a silent skip or an all-gates-passed claim.
+
+Classify capabilities independently; do not collapse them into a score. The
+ideal workflow, evidence assessment, operational status, and current-task
+execution outcome are four different things. An Agentize run can finish honestly
+with unresolved work, but if a request-critical capability is not `READY` and
+has no safe fallback or human decision path, the handoff must describe the
+repository as only partially prepared. This is an outcome rule, not another
+user-selectable mode.
 
 ## Scenario handling
 
 ### No effective workflow
 
-Create the minimum spine: a root instruction source, exact commands that are
-actually supported, a short repository map, verification expectations, and an
-explicit knowledge-gap section when necessary. Establish where material work
-gets its intent and human acceptance only when no existing owned path is
-discoverable. Add architecture or domain docs only when the codebase is complex
-enough that the root file would become an encyclopedia.
+Create the minimum spine: a root instruction source, short repository map,
+exact supported commands, and a concise durable workflow contract covering the
+full path, fast path, verification evidence, human decision points, and learning
+owner. Add focused architecture, domain, review, or knowledge-gap material only
+when no existing owned source can carry a consequential fact. Do not generate
+an empty example documentation tree.
 
 ### A useful partial workflow
 
@@ -123,8 +157,11 @@ out of normative instructions and add a precise human question.
 
 Prefer no change or a narrow repair. Do not rename established files, replace
 working conventions, or install Agentize artifacts merely to make the
-repository resemble another project. Report why the existing harness is sound
-and any optional improvements separately.
+repository resemble another project. Verify that the workflow survives without
+Agentize, that its Capability Report is accurate, that confirmed knowledge can be
+captured in active work, and that late post-merge corrections have a durable
+fallback. Report why the existing harness is sound and any optional improvements
+separately.
 
 ## Depth and investment decisions
 
@@ -153,6 +190,13 @@ Reject patches that primarily produce any of the following:
 - an exhaustive codebase summary that will age immediately;
 - several provider files containing copied policy;
 - a new CI workflow without a proven command or repository need;
+- an ideal-stage checklist presented as a report of configured capabilities;
+- `READY` inferred from a file, dependency, framework, or documented intention
+  without verifying the effective consumer and prerequisites;
+- a missing browser, E2E, Reviewer Agent, CI, or merge trigger recorded only as
+  "skipped" without capability status, consequence, and fallback;
+- a generic setup TODO that omits the human action, owner, permissions, secrets,
+  validation step, or status transition needed to close it;
 - absence of CI described as a defect solely because the scanner observed it,
   or described simultaneously as a defect and optional investment without a
   distinct consequence;
@@ -160,6 +204,24 @@ Reject patches that primarily produce any of the following:
 - a test suite presented as proof that the underlying product intent is correct;
 - a workflow in which an agent silently supplies its own acceptance or risk
   decision;
+- a workflow in which non-trivial implementation starts before its assumptions
+  and plan can be reviewed, or every trivial edit waits on an unnecessary gate;
+- E2E and browser business-flow validation presented as the same evidence;
+- browser evidence that is not tied to the tested change, environment, test state,
+  and precise observable predicate, or relies on fixed delays or ambiguous matches;
+- a full E2E suite inserted into every local edit loop when it belongs in shared
+  MR/PR CI;
+- an aggregate CI success that ignores failed, cancelled, timed-out, missing, or
+  unexpectedly skipped applicable required gates;
+- an implementing Agent's self-review presented as independent review;
+- a post-merge YAML file described as AI learning without a verified trigger,
+  Agent runner, permissions, data boundary, and failure behavior;
+- all knowledge deferred to a post-merge job even when authoritative corrections
+  can be captured in the current implementation MR/PR;
+- learning automation that commits directly to the default branch or promotes
+  unconfirmed `Inferred` knowledge;
+- review comments, resolved threads, “fixed” claims, same-file edits, or merge
+  treated as sufficient evidence that feedback became durable knowledge;
 - a provider policy, Hook, Plan mode, approval, or sandbox described as enforced
   solely because its file or prompt text exists;
 - universal approval tiers, deployment steps, or observability scaffolds that do

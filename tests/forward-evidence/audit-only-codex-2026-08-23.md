@@ -112,6 +112,6 @@ that uncovered boundary. The exact model and host build were unavailable, the
 deleted fixture is not an archived reproducibility artifact, and the record is a
 human-readable evaluator log rather than a signed trace. Runtime fallback,
 modification, minimal-patch, idempotence, and other host cases remain pending.
-After the later filter regression, the current Schema v3 scanner stopped running
-worktree status entirely. This record remains historical evidence only for the
-hashed snapshot above.
+After the later filter regression, Schema v3 stopped running worktree status
+entirely; Schema v4 subsequently added tri-state repository identity. This record
+remains historical evidence only for the hashed snapshot above.

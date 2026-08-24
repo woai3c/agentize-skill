@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const DEFAULT_MAX_FILES = 50000;
 const MAX_REPORTED_PATHS = 200;
 
@@ -975,20 +975,62 @@ function runGit(root, args) {
       windowsHide: true,
     },
   );
+  let failureReason = null;
+  if (result.error && result.error.code === 'ENOENT') {
+    failureReason = 'git_executable_unavailable';
+  } else if (result.error && result.error.code === 'ETIMEDOUT') {
+    failureReason = 'git_identity_query_timed_out';
+  } else if (result.error) {
+    failureReason = 'git_identity_query_failed';
+  }
   return {
     returncode: typeof result.status === 'number' ? result.status : 1,
     stdout: result.stdout || '',
     stderr:
       result.stderr ||
       (result.error ? result.error.message || String(result.error) : ''),
+    failure_reason: failureReason,
   };
+}
+
+function hasGitMarker(root) {
+  let current = root;
+  while (true) {
+    try {
+      fs.lstatSync(path.join(current, '.git'));
+      return true;
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') {
+        return true;
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return false;
+    }
+    current = parent;
+  }
 }
 
 function gitMetadata(root) {
   const topLevel = runGit(root, ['rev-parse', '--show-toplevel']);
   if (topLevel.returncode !== 0) {
+    if (hasGitMarker(root)) {
+      return {
+        is_repository: null,
+        repository_state: 'unverified',
+        repository_state_reason:
+          topLevel.failure_reason || 'git_identity_query_failed',
+        worktree_state: 'unverified',
+        worktree_state_reason: 'repository_identity_unverified',
+        dirty_path_count: null,
+        dirty_paths: [],
+        dirty_paths_truncated: null,
+      };
+    }
     return {
       is_repository: false,
+      repository_state: 'not_repository',
       worktree_state: 'not_applicable',
       dirty_path_count: null,
       dirty_paths: [],
@@ -1004,7 +1046,7 @@ function gitMetadata(root) {
   }
   if (!isWithinRoot(root, gitRoot)) {
     return {
-      is_repository: false,
+      is_repository: null,
       repository_state: 'unverified',
       repository_state_reason: 'git_root_outside_target_scope',
       worktree_state: 'unverified',
@@ -1020,6 +1062,7 @@ function gitMetadata(root) {
   }
   return {
     is_repository: true,
+    repository_state: 'verified',
     root: gitRoot,
     target_matches_git_root: gitRoot === root,
     branch_or_commit:
@@ -1220,6 +1263,9 @@ function buildReport(root, maxFiles, includeVendored) {
   if (versionControl.worktree_state === 'unverified') {
     diagnostics.push('git_worktree_state_unverified');
   }
+  if (versionControl.repository_state === 'unverified') {
+    diagnostics.push('git_repository_identity_unverified');
+  }
 
   let topLevel = [];
   try {
@@ -1287,14 +1333,19 @@ function renderMarkdown(report) {
   const agentSurface = report.agent_surface;
   const verification = report.verification;
   const tick = String.fromCharCode(96);
+  const repositoryDisplay =
+    report.version_control.is_repository === null
+      ? 'Unverified'
+      : report.version_control.is_repository
+        ? 'True'
+        : 'False';
   const lines = [
     '# Agentize repository inventory',
     '',
     '- Root: ' + tick + report.root + tick,
     '- Files scanned: ' + report.scan.files_seen,
     '- Ecosystems: ' + (project.ecosystems.join(', ') || 'none detected'),
-    '- Git repository: ' +
-      (report.version_control.is_repository ? 'True' : 'False'),
+    '- Git repository: ' + repositoryDisplay,
     '- Git worktree state: ' +
       (report.version_control.worktree_state || 'unverified'),
     '',

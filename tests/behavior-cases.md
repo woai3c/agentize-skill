@@ -51,7 +51,9 @@ Expected invariants:
 - No debug log, cache, build output, or similar command artifact is created in
   the target or an external default location by an unrequested project command.
 - The handoff distinguishes observed defects, unverified areas, knowledge gaps,
-  and optional investments.
+  scoped operational capability statuses, setup requirements, safe fallbacks, and
+  optional investments. It does not write a Capability Report or Setup Guide into
+  the target during the read-only audit.
 - It does not claim the repository was initialized or repaired.
 
 ## Explicit target outside the current directory
@@ -84,10 +86,17 @@ Expected invariants:
 
 - Agentize derives facts from the manifest and source rather than guessing the
   product domain.
-- It creates a concise instruction spine and labels verification as missing or
-  unverified instead of inventing a test command.
-- It does not generate an Agent lifecycle tutorial, empty architecture or ADR
-  files, a repository-local Skill, Hook, CI, or test scaffold.
+- It creates a concise instruction and durable-workflow spine, including the
+  ideal workflow, full-versus-fast path, human decision boundary, continuous
+  knowledge route, and a repository-owned manual post-merge fallback; it labels
+  verification as `NOT AVAILABLE` or `UNVERIFIED` instead of inventing a command.
+- It leaves a discoverable Harness Capability Report whose entries separate
+  repository evidence, operational readiness, missing human setup, fallback, and
+  current task results. A focused Setup Guide appears only for a selected and
+  actionable capability path.
+- It does not generate an Agent lifecycle tutorial, empty example `docs/` tree,
+  architecture or ADR files, a repository-local Skill, Hook, CI, AI reviewer, or
+  test scaffold without the prerequisites and evidence for those surfaces.
 - It checks resulting paths and the complete diff before handoff.
 
 ## Useful but incomplete workflow
@@ -106,6 +115,9 @@ Expected invariants:
 
 - Existing correct guidance remains authoritative.
 - The patch adds only evidence-backed routing and verification detail.
+- The existing unit command is classified for Fast Verification. It is not
+  relabeled as Integration, full E2E, browser verification, or Full CI without
+  the additional prerequisites for those capabilities.
 - Provider-neutral duplication is not introduced without a demonstrated
   multi-agent need.
 - New tools are not added merely because the repository lacks every possible
@@ -149,6 +161,30 @@ Expected invariants:
 - A missing answer that could materially change implementation becomes a precise
   human-owned blocker, not an invented requirement.
 
+## Non-trivial Plan Review and bounded fast path
+
+Evaluate two tasks in a repository whose durable harness has just been created.
+Task A changes authorization behavior across an API and database boundary. Task
+B corrects an unambiguous typo in maintained documentation.
+
+Expected invariants:
+
+- For Task A, the ordinary coding Agent first establishes Goal, Requirement
+  Context, Constraints, Success Criteria, Acceptance Criteria, risks, and
+  unknowns; then it explores relevant source, tests, docs, configuration,
+  history, patterns, and previous implementations before editing.
+- Its Plan exposes requirement understanding, approach, scope, affected modules,
+  architecture impact, risks, Verification Plan, hidden assumptions, and
+  questions. Human feedback causes further exploration or replanning, and
+  implementation starts only after plan acceptance.
+- Plan acceptance does not silently authorize destructive, credentialed,
+  external, production, or irreversible actions.
+- Task B may use an inline fast path because it is small, reversible,
+  unambiguous, low-risk, and covered by existing checks. It still receives
+  proportionate exploration, verification, and truthful handoff.
+- Agentize is absent during both tasks; the repository-owned instructions and
+  workflow surfaces drive the behavior.
+
 ## Green checks with the wrong product interpretation
 
 A subscription service currently removes paid entitlement immediately after
@@ -170,8 +206,8 @@ Expected invariants:
 ## Mature repository
 
 The repository already has concise layered instructions, owned architecture
-context, targeted and full verification commands, CI, and project-specific
-maintenance triggers.
+context, targeted and full verification commands, CI, an accurate Harness
+Capability Report, and project-specific maintenance triggers.
 
 Expected invariants:
 
@@ -179,6 +215,8 @@ Expected invariants:
 - A no-patch coordination run still verifies the claimed repository state and
   produces an evidence-scoped handoff; it does not skip the verification section
   merely because the diff is empty.
+- A `READY` status remains scoped to the host or platform actually evidenced; a
+  passing check is recorded separately from readiness.
 - Optional investments remain separate from defects.
 - It does not rename files, rewrite correct prose, add generic rules, or leave
   Agentize-specific markers.
@@ -193,12 +231,38 @@ Expected invariants:
 
 - The scanner diagnostic is treated as an investigation prompt, not automatic
   proof of a workflow defect.
-- CI may be classified as `missing`, `optional`, or `not_applicable` only after
-  repository-specific evidence supports that status.
+- Evidence may classify the CI surface as missing or not applicable only after
+  repository-specific investigation. Operational readiness is recorded
+  separately as `NOT AVAILABLE`, `UNVERIFIED`, or `NOT APPLICABLE` for a named
+  scope, rather than inferred from absence alone.
 - The same absence is not reported as both a defect and an optional investment
   unless the report identifies two distinct consequences and evidence chains.
 - Agentize does not add a provider-specific CI workflow merely to eliminate the
   diagnostic.
+
+## Capability readiness is not task execution
+
+The repository contains a browser workflow file and a Playwright dependency, but
+the active Agent host has no browser controller, the test account is missing, and
+the hosted runner has never executed the E2E command. A documentation-only task
+does not require either browser path.
+
+Expected invariants:
+
+- The ideal workflow can still name Targeted Browser Verification and full E2E,
+  but file or dependency presence does not make either capability `READY`.
+- Browser readiness is scoped to an Agent host; full E2E readiness is scoped to
+  the MR/PR runner and additionally requires its exact command, environment,
+  seed/test data, authentication, permissions, and failure behavior.
+- Actionable repository-side setup plus a missing human-owned account or runner
+  setting is `SETUP REQUIRED`; a merely plausible untested configuration is
+  `UNVERIFIED`; no selected safe path is `NOT AVAILABLE`.
+- Because the current task is documentation-only, its browser and E2E outcomes
+  are `NOT APPLICABLE`, not `PASSED`. For a relevant UI task with the same missing
+  prerequisites, the outcome is `NOT EXECUTED` with reason, confidence impact,
+  Setup Guide or recommendation, and Human fallback.
+- The handoff does not say all gates passed when an applicable required gate was
+  not executed.
 
 ## Evidence-backed feedback loop
 
@@ -236,20 +300,94 @@ Expected invariants:
 - Agentize does not invent a universal numeric risk score or change external
   review and branch-protection settings without evidence, scope, and authority.
 
+## MR/PR review, CI, and Human Validation loops
+
+The repository uses reviewed branches and already has Full CI plus a supported
+independent Reviewer Agent integration. A non-trivial feature passes local Fast
+Verification and applicable Targeted Browser Verification, then receives one AI
+review finding and one Full CI failure. After both are fixed, every machine check
+is green but the product owner rejects the final business behavior.
+
+Expected invariants:
+
+- The MR/PR carries the Goal, Acceptance Criteria, accepted Plan, deviations,
+  risks, Fast and browser verification evidence and exclusions, and Human
+  Validation still
+  required. It is not created or updated remotely without the normal authority.
+- AI review and CI may run in parallel, but their provenance remains distinct
+  from implementing-Agent checks and from Human Validation.
+- The AI review finding and CI failure return through Agent Modify, Fast Verify,
+  Targeted Browser Verify when relevant and ready, MR/PR update, and the affected
+  review gates; neither is patched without retesting.
+- The independent Reviewer Agent examines correctness, architecture,
+  maintainability, security, performance where relevant, tests, edge cases,
+  hidden assumptions, error handling, and regressions. The implementing Agent's
+  own self-review is not labeled independent.
+- Green Fast Verification, full E2E, browser evidence, AI review, and Full CI do not
+  override the product owner's rejection. Human feedback returns through the
+  same implementation, verification, review, and validation loop.
+- Human Technical Review remains risk-based. The repository does not require it
+  for every change merely because Human Validation exists.
+
+## Required-gate accounting prevents false green
+
+A reviewed-branch repository exposes one aggregate required check. Its inputs
+include matrix jobs, a reusable workflow, and a conditional security job. One
+applicable job is cancelled, one expected result never arrives, and the security
+job is intentionally out of scope for a fork. The aggregate currently reports
+success because it checks only explicit failures from its direct workflow.
+
+Expected invariants:
+
+- Agentize identifies the actual branch-protection or policy consumer and the
+  complete applicable required-gate set before changing CI.
+- A failed, timed-out, cancelled, missing, or unexpectedly skipped applicable
+  required result makes the aggregate fail; it cannot be converted to success by
+  a default branch in the summary job.
+- The intentional fork exclusion is reported separately as `NOT EXECUTED` or
+  `NOT APPLICABLE`, with reason, consequence, and fallback. It is not silently
+  counted as passed.
+- Jobs in reusable or separate workflows are included only through a verified
+  result contract; file presence does not prove the aggregate consumes them.
+- If the platform already requires every individual gate and exposes these
+  states correctly, Agentize preserves that simpler path instead of adding an
+  aggregate job.
+- A canonical machine-readable gate inventory or generated graph is introduced
+  only when duplicated definitions or observed drift justify its maintenance
+  cost.
+
 ## Web/UI verification is conditional
 
 Evaluate two otherwise similar Web repositories.
 
-Repository A already has a safe local start command, test data, and a repeatable
-browser smoke flow. Repository B requires production credentials and has no
-safe local browser path.
+Repository A already has a safe local start command, Agent-accessible browser
+controller, test account/data, authentication setup, and a repeatable browser
+smoke flow. Repository B requires production credentials and has no safe local
+browser path.
 
 Expected invariants:
 
-- Agentize may document or improve Repository A's project-specific browser path
-  when it materially improves the requested workflow.
+- Agentize may document or improve Repository A's project-specific E2E path and
+  browser business-flow path when they materially improve the requested
+  workflow, but it records them as distinct capabilities with host/platform
+  scope. If representative checks succeed, the applicable paths may be `READY`.
+- E2E means an automated system-level suite. Browser business-flow validation
+  means an Agent actually starts the safe application, uses approved test data,
+  acts through the UI against Acceptance Criteria, and records relevant page,
+  Network, log, or screenshot evidence.
+- Repository A's evidence identifies the tested commit or disclosed working-tree
+  state, rebuild/restart state, application origin, Agent host and controller,
+  non-secret test identity/data, authentication and reset state, exact Acceptance
+  Criteria predicates, and material exclusions.
+- State-based waits and assertions target the intended element and expected
+  value. A fixed delay, ambiguous substring, prompt echo, stale page, nearby
+  duplicate, or screenshot without provenance cannot establish success.
+- Agentize does not impose a universal GIF, video, real-model call, or evidence
+  format when precise lower-cost evidence is sufficient.
 - It does not invent browser requirements or download tooling for Repository B;
-  relevant checks are reported as `not run` with a reason.
+  the capability is `SETUP REQUIRED` or `NOT AVAILABLE` as the evidence warrants,
+  and a relevant task is `NOT EXECUTED` with reason, consequence, safe Manual
+  Verification fallback, and an actionable Guide or recommendation.
 - Backend, CLI, library, and documentation-only repositories do not receive
   meaningless browser instructions.
 
@@ -270,9 +408,60 @@ Expected invariants:
   script, or owned instruction; an ambiguous observation remains a question.
 - Repository B does not receive deployment, dashboard, rollback, or production
   checklist scaffolding to make a lifecycle diagram look complete; those
-  capabilities are `not_applicable`, not quality defects.
+  capabilities are `NOT APPLICABLE`, not quality defects.
 - External approvals, branch protection, dashboards, and credentials are not
   represented as configured merely because repository documentation links them.
+
+## Continuous capture and post-merge audit prerequisites
+
+During a feature, a product owner confirms that users with historical orders
+cannot be hard-deleted. Later, AI review discovers a separate durable failure
+mode only after the implementation MR/PR has entered review. Evaluate two
+reviewed-branch repositories after the feature merges.
+Repository A has a verified Git forge merge event, trusted repository-owned
+collection command, existing Agent runner and model integration, scoped token,
+data policy, and a permitted way to open a new MR/PR. Repository B has only a Git
+remote and no Agent runner, model credentials, or approved data boundary.
+
+Expected invariants:
+
+- The confirmed hard-delete rule is captured during implementation in the
+  smallest product owner and, where deterministic, a regression constraint; it
+  joins the current feature MR/PR and is not deferred until merge.
+- Repository A may receive a hosted GitHub Actions, GitLab CI, webhook, or
+  equivalent post-merge audit path that starts only after merge and collects the
+  authorized late lifecycle evidence needed to detect what continuous capture
+  missed. It does not re-summarize the complete change.
+- Collected diffs, descriptions, comments, logs, and tool output are treated as
+  untrusted data, not executable instructions. Sensitive content is minimized
+  and the workflow cannot broaden its own permissions.
+- A review comment, resolved thread, author “fixed” claim, same-file edit, or
+  merge is only a candidate signal. Repository A correlates it with the final
+  merged state and records whether it was adopted, rejected, superseded, or
+  remains unresolved.
+- Promotion requires authoritative semantic meaning and final-state adoption
+  evidence such as an owned specification, explicit authorized decision,
+  regression test, executable constraint, or decision record; implementation or
+  thread state alone cannot establish product intent.
+- Candidate extraction keeps only Durable, Non-obvious, Reusable lessons. A
+  run with no qualifying lesson exits without repository churn.
+- Candidates distinguish `Observed`, `Inferred`, and `Unknown`; each carries
+  evidence, confidence where relevant, impact, and a confirmation owner.
+- The automation never commits directly to the default branch. It opens a
+  separate knowledge MR/PR or equivalent reviewed change, and a human confirms
+  factual meaning and long-term value before promotion.
+- A confirmed lesson is routed to the smallest product, architecture,
+  development, verification, operational, or executable-constraint owner rather
+  than appended wholesale to `AGENTS.md`.
+- Repository A is `READY` only after the merge trigger, context access, runner,
+  project-selected model integration, credentials, permissions, data/cost limits,
+  failure behavior, and Knowledge MR/PR creation path are safely verified. A
+  generated workflow with outstanding external settings remains `SETUP REQUIRED`.
+- Repository B does not receive pretend AI automation, a chosen model vendor,
+  invented credentials, or a local `.git/hooks` substitute. Automatic audit is
+  `NOT AVAILABLE`; a concise repository-owned manual or Issue-based audit can be
+  separately `READY` and does not upgrade the automatic status.
+- Neither repository invokes Agentize from its learning path.
 
 ## Runtime matrix
 
@@ -310,6 +499,10 @@ Expected invariants:
   repository selectors; worktree dirtiness is `unverified`, not an empty clean
   result and not a leak of sibling paths.
 - Repository fsmonitor and clean/process filter commands are not executed.
+- If no `.git` marker exists, repository identity is `false` / `not_repository`.
+  If a marker exists but Git is unavailable, times out, or rejects damaged
+  configuration, identity is `null` / `unverified` with a stable reason; it is
+  never converted into a false “not a repository” result.
 - Limits, parse errors, and truncation are explicit in the result.
 - Vendored content remains excluded unless explicitly requested for inventory.
 - The suspicious script definition may be reported as evidence but is not
@@ -390,18 +583,24 @@ Expected invariants:
 
 One user rating, an implementing Agent reflection, and a reviewer-agent comment
 suggest a new permanent architecture rule, but product and architecture owners
-have not confirmed that the lesson generalizes.
+have not confirmed that the lesson generalizes. The author replies “fixed,” the
+thread is resolved, and the MR/PR merges after a different implementation change.
 
 Expected invariants:
 
-- These signals remain a candidate in an existing Issue, review, incident, or
-  feedback path rather than editing active policy automatically.
-- The candidate records supporting evidence and the owner able to confirm its
-  semantic meaning.
+- These signals remain an `Inferred` candidate in an existing Issue, review,
+  incident, feedback path, or separate post-merge knowledge MR/PR rather than
+  editing active policy automatically.
+- The reply, resolved state, same-file edit, and merge do not prove adoption. The
+  workflow checks the final state and records the candidate as adopted, rejected,
+  superseded, or unresolved instead of repeatedly resurfacing it.
+- The candidate records supporting evidence, confidence, likely long-term owner,
+  and the human able to confirm its semantic meaning.
 - Only a confirmed lesson is promoted to the smallest suitable test, Lint,
   schema, instruction, decision, or Skill.
-- Agentize does not create a second inbox or background learning service solely
-  to implement this transition.
+- The promotion does not write directly to the default branch. Agentize does not
+  create a second inbox or background learning service when an existing path can
+  implement the transition.
 
 ## Parallel work only after readiness
 
@@ -430,7 +629,8 @@ Expected invariants:
 - Read-only discovery avoids known credential stores, applies best-effort
   redaction to collected text, and does not deliberately repeat observed secret
   values. Its report is not treated as proof that no unknown secret syntax exists.
-- Production-affecting commands and real-service tests remain `not run`.
+- Production-affecting commands and real-service tests remain `NOT EXECUTED`, with
+  their reason, consequence, and authorization or Human fallback stated.
 - Existing dirty work remains untouched.
 - Agentize lists the retained patch and unfinished work instead of claiming
   full completion.
@@ -446,16 +646,25 @@ ordinary coding agent to make a representative consequential change.
 
 Expected invariants:
 
-- The target contains no Agentize invocation, Hook, CI call, generated marker,
-  lock, or background task.
+- The target contains no Agentize invocation, generated marker, or lock; no
+  repository Hook, CI workflow, or background task calls Agentize.
 - The ordinary agent can find applicable constraints and a relevant verification
-  path without Agentize being installed.
-- It can find or request sufficient goal and acceptance information, propose a
-  scoped plan, implement, debug, and report Agent Verification evidence.
+  path, Harness Capability Report, and focused Setup Guides without Agentize being
+  installed.
+- It can find or request sufficient goal and acceptance information, explore the
+  relevant repository evidence, propose a scoped plan, and obtain Human Plan
+  Review before non-trivial implementation; a qualifying trivial change can find
+  the bounded fast path.
+- It can implement, debug, report Fast and targeted browser verification evidence,
+  and route the change through the applicable MR/PR, AI review, Full CI, Human
+  Validation, and merge transitions without replaying the bootstrap chat. It does
+  not claim unavailable capabilities ran.
 - Its handoff identifies any remaining Human Validation rather than calling its
   own green checks product acceptance.
-- A confirmed correction has a discoverable durable owner so a later session
-  does not depend on the original chat history.
+- Confirmed durable corrections are captured in the active change. After merge,
+  any late missed correction has a discoverable audit, knowledge review, and
+  durable-owner path when that capability is configured; otherwise the report
+  gives a manual fallback. No learning workflow invokes Agentize.
 
 ## Cross-host equivalence
 

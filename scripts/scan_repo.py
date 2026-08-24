@@ -15,7 +15,7 @@ from typing import Any, Iterable
 from urllib.parse import unquote
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 DEFAULT_MAX_FILES = 50_000
 MAX_REPORTED_PATHS = 200
 
@@ -743,6 +743,22 @@ def parse_python_scripts(path: Path, root: Path) -> tuple[dict[str, Any] | None,
     }, None
 
 
+def has_git_marker(root: Path) -> bool:
+    current = root
+    while True:
+        try:
+            (current / ".git").lstat()
+            return True
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return True
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
+
+
 def git_metadata(root: Path) -> dict[str, Any]:
     git_environment = {
         key: value
@@ -753,34 +769,66 @@ def git_metadata(root: Path) -> dict[str, Any]:
     git_environment["GIT_TERMINAL_PROMPT"] = "0"
     git_environment["GIT_PAGER"] = "cat"
 
-    def run(*arguments: str) -> subprocess.CompletedProcess[str]:
+    def run(
+        *arguments: str,
+    ) -> tuple[subprocess.CompletedProcess[str], str | None]:
         try:
-            return subprocess.run(
-                [
-                    "git",
-                    "-c",
-                    "core.fsmonitor=false",
-                    "-c",
-                    "core.untrackedCache=false",
-                    "-C",
-                    str(root),
-                    *arguments,
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=git_environment,
-                timeout=5,
-                check=False,
+            return (
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "core.fsmonitor=false",
+                        "-c",
+                        "core.untrackedCache=false",
+                        "-C",
+                        str(root),
+                        *arguments,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=git_environment,
+                    timeout=5,
+                    check=False,
+                ),
+                None,
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return subprocess.CompletedProcess([], 1, "", str(error))
+        except FileNotFoundError as error:
+            return (
+                subprocess.CompletedProcess([], 127, "", str(error)),
+                "git_executable_unavailable",
+            )
+        except subprocess.TimeoutExpired as error:
+            return (
+                subprocess.CompletedProcess([], 124, "", str(error)),
+                "git_identity_query_timed_out",
+            )
+        except OSError as error:
+            return (
+                subprocess.CompletedProcess([], 1, "", str(error)),
+                "git_identity_query_failed",
+            )
 
-    top_level = run("rev-parse", "--show-toplevel")
+    top_level, identity_failure = run("rev-parse", "--show-toplevel")
     if top_level.returncode != 0:
+        if has_git_marker(root):
+            return {
+                "is_repository": None,
+                "repository_state": "unverified",
+                "repository_state_reason": (
+                    identity_failure or "git_identity_query_failed"
+                ),
+                "worktree_state": "unverified",
+                "worktree_state_reason": "repository_identity_unverified",
+                "dirty_path_count": None,
+                "dirty_paths": [],
+                "dirty_paths_truncated": None,
+            }
         return {
             "is_repository": False,
+            "repository_state": "not_repository",
             "worktree_state": "not_applicable",
             "dirty_path_count": None,
             "dirty_paths": [],
@@ -792,7 +840,7 @@ def git_metadata(root: Path) -> dict[str, Any]:
         root.relative_to(git_root)
     except ValueError:
         return {
-            "is_repository": False,
+            "is_repository": None,
             "repository_state": "unverified",
             "repository_state_reason": "git_root_outside_target_scope",
             "worktree_state": "unverified",
@@ -802,12 +850,13 @@ def git_metadata(root: Path) -> dict[str, Any]:
             "dirty_paths_truncated": None,
         }
 
-    branch_result = run("symbolic-ref", "--quiet", "--short", "HEAD")
+    branch_result, _ = run("symbolic-ref", "--quiet", "--short", "HEAD")
     if branch_result.returncode != 0:
-        branch_result = run("rev-parse", "--short", "HEAD")
+        branch_result, _ = run("rev-parse", "--short", "HEAD")
 
     return {
         "is_repository": True,
+        "repository_state": "verified",
         "root": str(git_root),
         "target_matches_git_root": git_root == root,
         "branch_or_commit": (
@@ -965,6 +1014,8 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
         diagnostics.append("scan_truncated_at_file_limit")
     if version_control.get("worktree_state") == "unverified":
         diagnostics.append("git_worktree_state_unverified")
+    if version_control.get("repository_state") == "unverified":
+        diagnostics.append("git_repository_identity_unverified")
 
     top_level = []
     try:
@@ -1024,13 +1075,17 @@ def render_markdown(report: dict[str, Any]) -> str:
     project = report["project"]
     agent_surface = report["agent_surface"]
     verification = report["verification"]
+    is_repository = report["version_control"].get("is_repository")
+    repository_display = (
+        "Unverified" if is_repository is None else str(is_repository)
+    )
     lines = [
         "# Agentize repository inventory",
         "",
         f"- Root: `{report['root']}`",
         f"- Files scanned: {report['scan']['files_seen']}",
         f"- Ecosystems: {', '.join(project['ecosystems']) or 'none detected'}",
-        f"- Git repository: {report['version_control'].get('is_repository', False)}",
+        f"- Git repository: {repository_display}",
         "- Git worktree state: "
         f"{report['version_control'].get('worktree_state', 'unverified')}",
         "",

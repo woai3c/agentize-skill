@@ -25,7 +25,9 @@ def write(root: Path, relative: str, content: str = "") -> Path:
     return path
 
 
-def scan(root: Path, *extra: str) -> dict:
+def scan(
+    root: Path, *extra: str, environment: dict[str, str] | None = None
+) -> dict:
     result = subprocess.run(
         [sys.executable, str(SCANNER), "--root", str(root), "--format", "json", *extra],
         cwd=REPOSITORY_ROOT,
@@ -33,6 +35,7 @@ def scan(root: Path, *extra: str) -> dict:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=environment,
         check=False,
     )
     if result.returncode != 0:
@@ -40,7 +43,9 @@ def scan(root: Path, *extra: str) -> dict:
     return json.loads(result.stdout)
 
 
-def scan_with_node(root: Path, *extra: str) -> dict:
+def scan_with_node(
+    root: Path, *extra: str, environment: dict[str, str] | None = None
+) -> dict:
     if NODE_EXECUTABLE is None:
         raise AssertionError("Node.js is unavailable")
     result = subprocess.run(
@@ -58,6 +63,7 @@ def scan_with_node(root: Path, *extra: str) -> dict:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=environment,
         check=False,
     )
     if result.returncode != 0:
@@ -95,6 +101,13 @@ class ScanRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             report = scan(Path(temporary))
 
+        self.assertIs(report["version_control"]["is_repository"], False)
+        self.assertEqual(
+            report["version_control"]["repository_state"], "not_repository"
+        )
+        self.assertEqual(
+            report["version_control"]["worktree_state"], "not_applicable"
+        )
         self.assertEqual(report["scan"]["files_seen"], 0)
         self.assertIn("empty_repository", report["diagnostic_hints"])
         self.assertIn(
@@ -284,7 +297,7 @@ class ScanRepositoryTests(unittest.TestCase):
 
             report = scan(root)
 
-        self.assertEqual(report["schema_version"], 3)
+        self.assertEqual(report["schema_version"], 4)
         self.assertEqual(report["project"]["manifests"], [])
         self.assertEqual(report["verification"]["declared_commands"], [])
         self.assertIn("package.json", report["scan"]["skipped_symlinks"])
@@ -597,6 +610,72 @@ class ScanRepositoryTests(unittest.TestCase):
                 self.assertTrue(
                     report["version_control"]["target_matches_git_root"]
                 )
+
+    @unittest.skipUnless(GIT_EXECUTABLE is not None, "Git is unavailable")
+    def test_git_repository_is_unverified_when_git_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            repository = base / "repository"
+            unavailable_path = base / "empty-path"
+            repository.mkdir()
+            unavailable_path.mkdir()
+            subprocess.run(
+                [GIT_EXECUTABLE, "-C", str(repository), "init", "-q"],
+                check=True,
+            )
+            environment = os.environ.copy()
+            environment["PATH"] = str(unavailable_path)
+
+            reports = [scan(repository, environment=environment)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(
+                    scan_with_node(repository, environment=environment)
+                )
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                metadata = report["version_control"]
+                self.assertEqual(report["schema_version"], 4)
+                self.assertIsNone(metadata["is_repository"])
+                self.assertEqual(metadata["repository_state"], "unverified")
+                self.assertEqual(
+                    metadata["repository_state_reason"],
+                    "git_executable_unavailable",
+                )
+                self.assertEqual(metadata["worktree_state"], "unverified")
+                self.assertIn(
+                    "git_repository_identity_unverified",
+                    report["diagnostic_hints"],
+                )
+
+    @unittest.skipUnless(GIT_EXECUTABLE is not None, "Git is unavailable")
+    def test_git_repository_is_unverified_when_config_is_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repository"
+            repository.mkdir()
+            subprocess.run(
+                [GIT_EXECUTABLE, "-C", str(repository), "init", "-q"],
+                check=True,
+            )
+            (repository / ".git" / "config").write_text(
+                "[invalid\n", encoding="utf-8"
+            )
+
+            reports = [scan(repository)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(repository))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                metadata = report["version_control"]
+                self.assertEqual(report["schema_version"], 4)
+                self.assertIsNone(metadata["is_repository"])
+                self.assertEqual(metadata["repository_state"], "unverified")
+                self.assertEqual(
+                    metadata["repository_state_reason"],
+                    "git_identity_query_failed",
+                )
+                self.assertEqual(metadata["worktree_state"], "unverified")
 
     def test_standalone_skill_and_openai_metadata_are_visible(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
