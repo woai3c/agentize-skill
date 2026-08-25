@@ -377,6 +377,10 @@ class ScanRepositoryTests(unittest.TestCase):
                 "README.zh-CN.md",
                 "RUNBOOK.md",
                 "docs/architecture/overview.md",
+                "docs/development/commands.md",
+                "docs/operations/observability.md",
+                "docs/product/business-rules.md",
+                "docs/verification/runtime-verification.md",
             }
             for relative in expected:
                 write(root, relative, f"# {relative}\n")

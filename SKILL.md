@@ -62,7 +62,7 @@ Prefer, in order:
 3. add one focused provider-neutral document or deterministic helper when no suitable owner exists;
 4. add a mechanical feedback loop only when direct evidence shows the gap matters and the solution is proportionate.
 
-Do not force a sample file tree, duplicate generic instructions, create empty placeholders, or infer intended behavior from implementation alone. Preserve project terminology and organization. Keep one owner per fact, root instructions concise and navigational, nested instructions limited to genuine subtree differences, and provider-specific surfaces limited to verified host needs.
+Do not force a complete sample file tree, duplicate generic instructions, create empty placeholders, or infer intended behavior from implementation alone. Preserve project terminology and organization. Keep one semantic owner per fact, root instructions concise and navigational, nested instructions limited to genuine subtree differences, and provider-specific surfaces limited to verified host needs. When no maintained owner exists, use the provider-neutral fallback locations in [references/artifacts.md](references/artifacts.md#knowledge-ownership-and-executable-enforcement) only for knowledge the repository can actually support.
 
 Every non-audit run must leave the applicable parts of the workflow discoverable without this Skill. Depending on repository evidence, the durable harness needs:
 
@@ -71,7 +71,7 @@ Every non-audit run must leave the applicable parts of the workflow discoverable
 - project-specific Local Fast Verification and Targeted Runtime Verification paths, with full E2E placed by explicit cost and risk policy rather than assumed on every edit or MR/PR;
 - Human Local Acceptance before Ready for Review, with additional preview or staging acceptance only when environment differences or risk justify it;
 - Draft-versus-Ready MR/PR semantics, independent AI review and applicable MR/PR CI where real platform capabilities exist, plus complete return loops after findings;
-- Continuous Knowledge Capture with `Observed`, `Inferred`, and `Unknown` provenance, routing confirmed durable knowledge to the smallest owner and preferring executable constraints when deterministic;
+- Continuous Knowledge Capture with `Observed`, `Inferred`, and `Unknown` provenance, routing confirmed durable knowledge to the smallest semantic owner and adding proportionate executable enforcement when deterministic;
 - an optional Post-Merge Knowledge Audit only where a real trigger, context collector, trusted headless agent path, project-selected model integration, permissions, cost boundary, failure route, and human-reviewed Knowledge MR/PR are verified;
 - a discoverable Harness Capability Report separating readiness, missing setup, fallbacks, consequences, reevaluation triggers, and current-task results.
 

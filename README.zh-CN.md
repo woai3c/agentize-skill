@@ -46,6 +46,8 @@ https://github.com/woai3c/agentize-skill
 | 工作流冲突或过期 | 根据证据协调实际行为，并暴露尚未解决的意图问题。 |
 | 工作流成熟 | 只做聚焦修复，或给出有证据支持的零修改结论。 |
 
+Agentize 会让根 Agent 指令文件保持简洁并主要承担导航职责。它优先复用仍在维护的知识 Owner；如果不存在合适 Owner，并且有证据支持的内容确实值得沉淀，则在 `docs/product/`、`docs/architecture/`、`docs/development/`、`docs/verification/` 或 `docs/operations/` 下创建聚焦文件。这些目录是默认 Fallback，不是每个仓库都要生成的空目录树。语义知识与负责执行其中确定性部分的 Test、Lint、Type Rule、Architecture Check、Script 或 CI Gate 分开表达。已有 `ARCHITECTURE.md` 可以保留，但 Agentize 默认不会创建它。
+
 明确要求“仅审计”“只报告”或“不要修改”时，默认执行静态只读评估。Agentize 可以检查命令定义，但不会运行项目定义的测试、构建、包管理器脚本、Lint 或 Runtime Flow；除非用户另外明确要求某项动态检查。
 
 ## 它留下的工作流

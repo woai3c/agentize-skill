@@ -145,15 +145,20 @@ DOC_BASENAMES = {
 HIGH_SIGNAL_DOC_WORDS = {
     "adr",
     "architecture",
+    "business",
     "decisions",
+    "deployment",
     "design",
     "development",
     "domain",
     "glossary",
     "invariants",
+    "observability",
     "operations",
+    "product",
     "runbook",
     "testing",
+    "verification",
 }
 
 TEST_DIRECTORY_NAMES = {

@@ -67,11 +67,12 @@ The contract should state, in project terms:
   outcomes are reported.
 
 Do not copy the full lifecycle tutorial into every instruction file. One short
-operating contract plus links to project-owned detail is enough. A possible
-knowledge layout might have product, architecture, development, verification,
-and operations owners under `docs/`, but that tree is illustrative only. Reuse
-the repository's vocabulary and current structure rather than generating empty
-directories or renaming maintained sources.
+operating contract plus links to project-owned detail is enough. Reuse the
+repository's vocabulary and maintained sources first. When no equivalent owner
+exists, use the provider-neutral defaults in [Knowledge ownership and executable
+enforcement](#knowledge-ownership-and-executable-enforcement), creating only the
+focused files supported by real content. Do not generate empty directories,
+rename maintained sources, or create a complete example tree for appearance.
 
 ## Harness Capability Report
 
@@ -253,16 +254,39 @@ If the repository chooses automatic Post-Merge Knowledge Audit, its artifacts mu
 
 Neither path may invoke Agentize, treat untrusted lifecycle text as instructions, write directly to the default branch, or create churn when no knowledge qualifies.
 
-Route confirmed knowledge to the current owners rather than a universal tree:
+### Knowledge ownership and executable enforcement
 
-| Knowledge | Preferred owner |
-| --- | --- |
-| Business rule or user flow | Product/domain specification and, when deterministic, acceptance or regression test |
-| Architecture rule or tradeoff | Architecture documentation, ADR/RFC, architecture test, dependency rule, or schema |
-| Development convention | Contribution/development guide, formatter, lint, type rule, or task runner |
-| Verification rule or failure mode | Testing guidance, regression test, CI gate, or focused script |
-| Operational knowledge | Runbook, deployment/rollback guidance, monitor, or operational check |
-| Cross-cutting Agent routing | Concise root instruction link, not duplicated detail |
+Reuse an existing maintained semantic owner before creating a new path. If no
+equivalent owner exists and confirmed durable content warrants one, use these
+provider-neutral defaults. They are fallback locations, not a scaffold to create
+in full:
+
+| Knowledge | Existing semantic owner first | Default semantic owner when absent | Proportionate executable enforcement |
+| --- | --- | --- | --- |
+| Business rule or user flow | Product or domain specification | A focused file under `docs/product/` | Acceptance or regression test |
+| Architecture rule or tradeoff | Architecture documentation or ADR/RFC | A focused file under `docs/architecture/` | Architecture test, dependency rule, type, or schema |
+| Development convention | Contribution or development guide | A focused file under `docs/development/` | Formatter, lint, type rule, or task-runner target |
+| Verification rule or failure mode | Testing or QA guidance | A focused file under `docs/verification/` | Regression test, CI gate, or focused script |
+| Operational knowledge | Runbook, deployment, rollback, or observability guidance | A focused file under `docs/operations/` | Monitor, deployment check, alert, or recovery script |
+| Cross-cutting Agent operating rule or routing | Root Agent instruction source | `AGENTS.md` or the repository's provider-neutral equivalent | Add a Hook or CI gate only for a real deterministic lifecycle requirement |
+
+Choose filenames that describe the content, such as `business-rules.md`,
+`user-flows.md`, `data-flow.md`, `conventions.md`, `testing-strategy.md`, or
+`observability.md`. Create only files with evidence-backed content. Do not create
+every example file or directory merely to complete the taxonomy.
+
+`ARCHITECTURE.md` is not a cross-host convention and is not a default Agentize
+output. Preserve or repair it when the repository already uses it as a maintained
+architecture owner. Otherwise place newly required architecture knowledge under
+`docs/architecture/` and link it from the root instruction source.
+
+The semantic owner records intent, rationale, scope, and important exceptions;
+an executable constraint enforces the deterministic portion. One does not
+silently replace the other. In particular, do not treat a test derived from
+current implementation as the sole source of consequential business intent.
+When tool configuration completely defines a mechanical convention, that
+configuration may be canonical and the development guide should link to its
+command instead of restating the rule.
 
 ## Knowledge gaps
 
@@ -297,16 +321,14 @@ Do not introduce a new decision-record system for a one-line local choice.
 
 ## Mechanical feedback loops
 
-Choose the strongest economical representation for a learned constraint:
+Apply the executable-enforcement column above for domain, architecture,
+development, verification, and operational rules. Additional recurring gaps
+use the strongest economical representation below:
 
 | Repeated problem | Preferred durable form |
 | --- | --- |
-| Behavioral regression | Focused test or end-to-end assertion |
-| Invalid dependency or API direction | Lint, type, schema, or dependency rule |
 | Generated-file drift | Checked generator and CI gate |
 | Fragile repeated command | Script or task-runner target |
-| Repository-specific judgment | Concise instruction with rationale or link |
-| Non-obvious tradeoff | Decision record |
 | Private live system fact | Authorized connector or MCP tool, not copied prose |
 
 A new mechanical feedback loop must satisfy the scope boundary above. A test

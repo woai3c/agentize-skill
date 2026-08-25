@@ -138,15 +138,20 @@ const DOC_BASENAMES = new Set([
 const HIGH_SIGNAL_DOC_WORDS = new Set([
   'adr',
   'architecture',
+  'business',
   'decisions',
+  'deployment',
   'design',
   'development',
   'domain',
   'glossary',
   'invariants',
+  'observability',
   'operations',
+  'product',
   'runbook',
   'testing',
+  'verification',
 ]);
 
 const TEST_DIRECTORY_NAMES = new Set([

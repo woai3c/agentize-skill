@@ -46,6 +46,8 @@ It adapts instead of installing a fixed scaffold:
 | Conflicting or stale workflow | Reconcile effective behavior from evidence and surface unresolved intent. |
 | Mature workflow | Make a narrow repair or produce an evidence-backed no-change result. |
 
+Agentize keeps the root Agent instruction file concise and navigational. It reuses maintained knowledge owners first; when none exists and evidence-backed content warrants a new owner, it uses focused files under `docs/product/`, `docs/architecture/`, `docs/development/`, `docs/verification/`, or `docs/operations/`. These are fallback locations, not an empty tree generated in every repository. Semantic knowledge remains distinct from any Test, Lint, Type Rule, Architecture Check, script, or CI Gate that enforces its deterministic portion. An existing `ARCHITECTURE.md` may be preserved, but Agentize does not create it by default.
+
 An explicit `audit only`, `report only`, or `do not modify` request is static and read-only by default. Agentize may inspect command definitions but does not run project-defined tests, builds, package scripts, linters, or runtime flows unless the user separately requests a named dynamic check.
 
 ## Workflow it leaves behind

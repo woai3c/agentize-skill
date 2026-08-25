@@ -418,9 +418,12 @@ Human confirmation can promote an `Inferred` claim or resolve an `Unknown`. Rout
 business rules to product/domain ownership, architecture rules to architecture
 or a decision record, development conventions to contribution guidance,
 verification rules to testing guidance, and operational knowledge to runbooks.
-Agent-wide routing stays concise in the instruction entrypoint. When a confirmed
-rule can be enforced cheaply and deterministically, prefer a test, lint, type,
-schema, architecture check, script, or CI gate over prose.
+Agent-wide routing stays concise in the instruction entrypoint. Keep the semantic
+owner of intent, rationale, scope, and exceptions distinct from mechanical
+enforcement. When a confirmed rule can be enforced cheaply and deterministically,
+add a test, lint, type, schema, architecture check, script, or CI gate rather than
+relying on prose alone. A fully mechanical convention may be owned by its tool
+configuration, with documentation linking to the command instead of duplicating it.
 
 ### Adoption evidence for feedback-derived knowledge
 
