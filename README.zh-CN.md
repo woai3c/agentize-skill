@@ -10,6 +10,23 @@ Agentize 是一个厂商中立的 Coding Agent Skill，用于把现有仓库一�
 
 最终结果留在目标仓库中。后续 Codex、Claude Code、Gemini CLI、Kimi CLI 或其他 Coding Agent 会依赖仓库留下的指令、文档、检查、CI、工具和决策路径工作，不应把 Agentize 当作运行时依赖。
 
+## 快速开始
+
+把下面这段话发给具备安装能力的 Coding Agent，让它为你的所有仓库安装这个 Skill：
+
+```text
+请帮我安装这个 Agent Skill，让它在我的所有仓库中都可用：
+https://github.com/woai3c/agentize-skill
+```
+
+然后打开需要改造的仓库并发送：
+
+```text
+使用 Agentize 把这个现有仓库一次性改造成可独立运行、Human-in-the-loop 的 AI 开发 Harness。保留当前工具和约定，只做最小且有证据支持的变更，诚实暴露尚不支持的能力和人工配置，验证最终结果，并分别交接有明确作用域的 Harness Capability Report 和本次任务结果。
+```
+
+如果新安装的 Skill 尚未出现，请新建一个 Agent 会话。仓库级安装、不同宿主的路径、只读审计和聚焦修复说明见[安装与使用](#安装与使用)。
+
 ## 它能做什么
 
 一次普通 Bootstrap 会：
@@ -58,32 +75,13 @@ Agentize 不能虚构产品意图、批准自己的 Plan 或 Acceptance、替人
 
 ## 安装与使用
 
-### 让具备安装能力的 Agent 自动安装（推荐）
+### 安装细节
 
-把这个仓库地址发给 Agent：
+用于分发的仓库名是 `agentize-skill`；Skill 名称和安装目录仍然是 `agentize`。快速开始中的 Prompt 请求的是可跨仓库复用的用户级安装；如果只想在当前仓库使用，请明确说明。具备安装能力的 Agent 应遵循当前宿主的 Skill 发现机制，复制完整 Skill 目录，验证能否发现，并报告准确安装路径。安装任何第三方 Skill 前，都应检查源码和安装的 Revision。
 
-```text
-https://github.com/woai3c/agentize-skill
-```
+安装后，在宿主提供 Skill Picker 时选择 Agentize，或直接在请求中明确写出 Agentize。你不需要自己运行随附扫描器。
 
-建议请求：
-
-```text
-请帮我安装这个 Agent Skill，让它在我的所有仓库中都可用：
-https://github.com/woai3c/agentize-skill
-```
-
-用于分发的仓库名是 `agentize-skill`；Skill 名称和安装目录仍然是 `agentize`。如果只想在当前仓库使用，请明确说明。具备安装能力的 Agent 应遵循当前宿主的 Skill 发现机制，复制完整 Skill 目录，验证能否发现，并报告准确安装路径。部分宿主需要新建会话才能看到新安装的 Skill。安装任何第三方 Skill 前，都应检查源码和安装的 Revision。
-
-### 安装后调用
-
-打开要改造的仓库，在宿主提供 Skill Picker 时选择 Agentize，或直接在请求中明确写出 Agentize。你不需要自己运行随附扫描器。
-
-一次性 Bootstrap：
-
-```text
-使用 Agentize 把这个现有仓库一次性改造成可独立运行、Human-in-the-loop 的 AI 开发 Harness。保留当前工具和约定，只做最小且有证据支持的变更，诚实暴露尚不支持的能力和人工配置，验证最终结果，并分别交接有明确作用域的 Harness Capability Report 和本次任务结果。
-```
+### 其他使用方式
 
 只读审计：
 

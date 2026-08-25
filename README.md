@@ -10,6 +10,23 @@ Agentize is a vendor-neutral coding-agent Skill that bootstraps an existing repo
 
 The result lives in the target repository. Future Codex, Claude Code, Gemini CLI, Kimi CLI, or other coding-agent sessions should work from the instructions, docs, checks, CI, tools, and decision paths left there; they should not need Agentize as a runtime dependency.
 
+## Quick start
+
+Ask an installation-capable coding agent to install the Skill for all your repositories:
+
+```text
+Install this Agent Skill for me and make it available in all my repositories:
+https://github.com/woai3c/agentize-skill
+```
+
+Then open the repository you want to prepare and ask:
+
+```text
+Use Agentize to bootstrap this existing repository as a self-contained, human-in-the-loop AI development harness. Preserve its current tools and conventions, make the smallest evidence-backed changes, expose unsupported capabilities and human setup honestly, verify the result, and finish with a scoped Harness Capability Report and separate task outcomes.
+```
+
+If the newly installed Skill is not visible, start a new agent session. See [Install and use](#install-and-use) for repository-only installation, host-specific paths, read-only audits, and focused repairs.
+
 ## What it does
 
 A normal bootstrap run:
@@ -58,32 +75,13 @@ Agentize cannot invent product intent, approve its own plan or acceptance, choos
 
 ## Install and use
 
-### Ask an installation-capable agent to install it (recommended)
+### Installation details
 
-Send the agent this repository URL:
+The distribution repository is named `agentize-skill`; the Skill name and installation directory remain `agentize`. The quick-start prompt requests a reusable user-scoped installation. To keep it only in the current repository, say so explicitly. An installation-capable agent should follow the active host's documented discovery mechanism, copy the complete Skill directory, verify discovery, and report the exact installed path. Inspect the source and revision before installing any third-party Skill.
 
-```text
-https://github.com/woai3c/agentize-skill
-```
+After installation, select Agentize in the host's Skill picker when available or name Agentize directly in your request. You do not need to run the bundled scanner yourself.
 
-Suggested prompt:
-
-```text
-Install this Agent Skill for me and make it available in all my repositories:
-https://github.com/woai3c/agentize-skill
-```
-
-The distribution repository is named `agentize-skill`; the Skill name and installation directory remain `agentize`. To keep it only in the current repository, say so explicitly. An installation-capable agent should follow the active host's documented discovery mechanism, copy the complete Skill directory, verify discovery, and report the exact installed path. Some hosts require a new session before a newly installed Skill appears. Inspect the source and revision before installing any third-party Skill.
-
-### Invoke it after installation
-
-Open the repository you want to prepare, select Agentize in the host's Skill picker when available, or name Agentize directly in your request. You do not need to run the bundled scanner yourself.
-
-One-time bootstrap:
-
-```text
-Use Agentize to bootstrap this existing repository as a self-contained, human-in-the-loop AI development harness. Preserve its current tools and conventions, make the smallest evidence-backed changes, expose unsupported capabilities and human setup honestly, verify the result, and finish with a scoped Harness Capability Report and separate task outcomes.
-```
+### Other ways to use it
 
 Read-only audit:
 
