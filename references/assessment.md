@@ -68,13 +68,14 @@ be strong in one, missing another, and have no need for a third.
 | Work definition | Consequential work has discoverable goals, constraints, success and acceptance criteria, scope, and unresolved questions in an existing owned system. | Imperative implementation steps with no desired outcome; tests derived only from the proposed code; no owner for ambiguous intent. |
 | Planning and plan review | Non-trivial work produces a scoped, evidence-backed plan and has a real route for Human Plan Review; a bounded fast path exists for obvious low-risk work. | The Agent edits before surfacing assumptions; silence is approval; every typo requires heavyweight ceremony. |
 | Fast verification | Relevant Unit and Integration tests, typecheck, Lint, and necessary build commands are exact, safe, and cheap enough for the implementation loop. | Only "run tests"; the full E2E suite is required after every edit; commands need undocumented state. |
-| Browser business verification | Applicable Web/UI work has an Agent-accessible browser controller, safe application start path, test identity/data, authentication setup, a focused Acceptance Criteria flow, and evidence bound to the tested change, environment, and precise state predicates. | E2E is relabeled as browser verification; a host tool is assumed available to every future Agent; a fixed delay, ambiguous text match, or screenshot without provenance is treated as proof; production credentials or ad hoc clicks are required. |
-| Validation ownership | Agent evidence and human acceptance are distinct, and risk determines who must decide what. | Green CI is treated as product approval; an agent accepts its own interpretation; every change gets the same ceremony. |
+| Targeted runtime verification | Each applicable changed surface has a safe focused runtime path: browser interaction for Web/UI, representative requests for APIs, isolated execution for migrations, controlled messages for workers/queues, or real invocation for CLIs/scripts. Evidence is bound to the tested change, environment, inputs or test state, exact actions, observable predicates, and permitted side effects. | Browser is forced onto non-Web work; Unit tests are presented as runtime proof; a framework or command is assumed usable without environment, data, reset, permissions, or an active host; fixed delays, ambiguous matches, or artifacts without provenance are treated as proof. |
+| Human Local Acceptance | After applicable local Agent verification, a human or established policy decides whether the outcome is actually wanted before the change becomes Ready for Review; failed acceptance returns through implementation and local verification. | Green checks are treated as product approval; an Agent accepts its own interpretation; acceptance first appears after technical MR/PR gates; routine work repeats an identical human ceremony locally and remotely. |
 | Change workflow | An agent can explore, plan, implement, debug, retest, and hand off through explicit correction loops without Agentize. | Commands require undocumented setup; feedback has no return path; future sessions depend on the bootstrap chat. |
-| MR/PR review and full CI | Reviewed-branch projects distinguish implementing-Agent evidence, independent AI review where configured, full CI including full E2E where available, risk-based technical review, and Human Validation. Every applicable required gate has explicit result accounting. | An Agent approves itself; full E2E is claimed from framework presence; a YAML file is assumed active without a runner or permissions; a green aggregate ignores a failed, cancelled, missing, or unexpectedly skipped required result. |
+| Draft/Ready MR/PR review and CI | Reviewed-branch projects allow Draft MR/PR early without treating it as ready, gate Ready for Review on local verification and Human Local Acceptance, distinguish implementing-Agent evidence from independent AI review where configured, and run the complete applicable per-change MR/PR CI gate set. Every fix returns through local checks, MR/PR update, AI Review, and MR/PR CI. | Draft creation is treated as readiness; an Agent approves itself; a YAML file is assumed active without a runner or permissions; a fix bypasses rerun gates; a green aggregate ignores a failed, cancelled, missing, or unexpectedly skipped result assigned to the MR/PR boundary. |
+| E2E placement and evidence | A cost- and risk-aware policy places targeted or full E2E per MR/PR, at test/staging promotion, on a schedule, before release, or in an explicit combination. Each path names its suite, trigger, revision/candidate, environment/data, cost, owner, blocking target, and failure route; task evidence states when E2E did not run. | Full E2E is forced onto every MR/PR regardless of cost; expensive E2E is deferred with no trigger or owner; framework presence is called readiness; a scheduled result is attributed to a different change; “all regression passed” is claimed when only MR/PR gates ran. |
 | Delivery and observation | Applicable merge, release, rollback, operational checks, and success signals are discoverable with their owners and permissions. | Deployment is mixed into routine checks; no rollback or success signal; production access is assumed. |
 | Continuous knowledge capture | During implementation, authoritative durable, non-obvious, reusable knowledge is routed into the current change and the smallest long-term owner. | Every note is deferred until merge; human corrections remain only in chat; unconfirmed inference becomes policy. |
-| Post-merge knowledge audit | A configured merge trigger can inspect only late lifecycle evidence and open a separate human-reviewed knowledge change when continuous capture missed something. | The audit re-summarizes everything; instructions are mistaken for a trigger; automation writes directly to the default branch. |
+| Optional post-merge knowledge audit | When the project chooses and configures it, a real merge trigger can inspect only late lifecycle evidence and open a separate human-reviewed knowledge change when continuous capture missed something. | The optional backstop is presented as mandatory or already active; the audit re-summarizes everything; instructions are mistaken for a trigger; automation writes directly to the default branch. |
 | Knowledge provenance | Observed, Inferred, and Unknown claims retain evidence, confidence where relevant, impact, and decision ownership. | Model interpretation is presented as fact; current behavior silently becomes a business rule. |
 | Knowledge adoption | Feedback-derived knowledge has authoritative semantic meaning, final-state evidence of adoption, and a recorded disposition before promotion. | A comment, resolved thread, “fixed” claim, same-file edit, or merge is treated as proof that the proposed lesson was adopted. |
 | Parallel readiness | When parallel work is actually used, tasks, worktrees, shared resources, and integration ownership are separable. | More agents are added before verification is reliable; sessions share ports, state, or generated files without coordination. |
@@ -104,21 +105,21 @@ to one operational status in the final Harness Capability Report:
 | --- | --- |
 | `READY` | The complete path and its prerequisites are configured for the named scope, and a safe representative check or direct platform evidence verifies it. |
 | `PARTIAL` | A useful subset works, but one or more named parts or scopes do not. State exactly what works and what fallback applies. |
-| `SETUP REQUIRED` | Agentize installed or documented the repository-side path, but a named human action, secret, account, permission, external setting, or environment is still required. It is not ready until verified. |
-| `NOT AVAILABLE` | No usable path is configured and Agentize could not safely establish one within scope. Give an evidence-backed option, not a promise. |
+| `SETUP REQUIRED` | A concrete path has been selected and its safe repository-side pieces are present, but a named human action, secret, account, permission, external setting, or environment is still required. It is not ready until verified. |
+| `NOT CONFIGURED` | The capability applies, but no usable path is currently configured or selected in the named scope. Give an evidence-backed recommendation and fallback, not a promise. |
 | `UNVERIFIED` | Configuration appears to exist, but effective activation or behavior could not be safely proven. |
 | `NOT APPLICABLE` | Direct evidence shows the capability does not apply to this repository or scope. |
 
-Capability status is not a task result. Status is scoped. `AI Browser
-Verification: READY (Codex with Browser MCP)`
-does not mean it is ready in Claude Code, a headless CI runner, or every future
-host. `READY` describes capability availability, not whether a check ran for the
-current task.
+Capability status is not a task result. Status is scoped. `Targeted Runtime
+Verification (Web/UI): READY (<named host with browser controller>)` does not mean
+the same path is ready in another coding-agent host, a headless CI runner, or for
+an API or migration surface. `READY` describes capability availability, not
+whether a check ran for the current task.
 
 For task execution, report a separate outcome: `PASSED`, `FAILED`, `NOT EXECUTED`,
 or `NOT APPLICABLE`. A `NOT EXECUTED` result includes the capability status,
 reason, consequence, and fallback or human action. Never turn `SETUP REQUIRED`,
-`NOT AVAILABLE`, or `UNVERIFIED` into a silent skip or an all-gates-passed claim.
+`NOT CONFIGURED`, or `UNVERIFIED` into a silent skip or an all-gates-passed claim.
 
 Classify capabilities independently; do not collapse them into a score. The
 ideal workflow, evidence assessment, operational status, and current-task
@@ -183,48 +184,18 @@ Use repository complexity and demonstrated failure modes, not file count alone:
 
 ## Anti-patterns
 
-Reject patches that primarily produce any of the following:
+Reject the common weak signals in the rubric above, especially patches that primarily produce:
 
-- a universal `AGENTS.md` template filled with generic advice;
-- unverified build and test commands;
-- an exhaustive codebase summary that will age immediately;
-- several provider files containing copied policy;
-- a new CI workflow without a proven command or repository need;
-- an ideal-stage checklist presented as a report of configured capabilities;
-- `READY` inferred from a file, dependency, framework, or documented intention
-  without verifying the effective consumer and prerequisites;
-- a missing browser, E2E, Reviewer Agent, CI, or merge trigger recorded only as
-  "skipped" without capability status, consequence, and fallback;
-- a generic setup TODO that omits the human action, owner, permissions, secrets,
-  validation step, or status transition needed to close it;
-- absence of CI described as a defect solely because the scanner observed it,
-  or described simultaneously as a defect and optional investment without a
-  distinct consequence;
-- prose-only rules where a cheap mechanical check can enforce the invariant;
-- a test suite presented as proof that the underlying product intent is correct;
-- a workflow in which an agent silently supplies its own acceptance or risk
-  decision;
-- a workflow in which non-trivial implementation starts before its assumptions
-  and plan can be reviewed, or every trivial edit waits on an unnecessary gate;
-- E2E and browser business-flow validation presented as the same evidence;
-- browser evidence that is not tied to the tested change, environment, test state,
-  and precise observable predicate, or relies on fixed delays or ambiguous matches;
-- a full E2E suite inserted into every local edit loop when it belongs in shared
-  MR/PR CI;
-- an aggregate CI success that ignores failed, cancelled, timed-out, missing, or
-  unexpectedly skipped applicable required gates;
-- an implementing Agent's self-review presented as independent review;
-- a post-merge YAML file described as AI learning without a verified trigger,
-  Agent runner, permissions, data boundary, and failure behavior;
-- all knowledge deferred to a post-merge job even when authoritative corrections
-  can be captured in the current implementation MR/PR;
-- learning automation that commits directly to the default branch or promotes
-  unconfirmed `Inferred` knowledge;
-- review comments, resolved threads, “fixed” claims, same-file edits, or merge
-  treated as sufficient evidence that feedback became durable knowledge;
-- a provider policy, Hook, Plan mode, approval, or sandbox described as enforced
-  solely because its file or prompt text exists;
-- universal approval tiers, deployment steps, or observability scaffolds that do
-  not match the project;
-- an "unknowns" document filled with low-impact questions;
-- a workflow that requires Agentize to remain installed after initialization.
+- a generic fixed scaffold, exhaustive codebase summary, copied provider policy, or unverified command;
+- a new dependency, CI workflow, E2E cadence, approval tier, deployment path, or observability surface without a demonstrated repository need and working underlying path;
+- an ideal-stage checklist, configuration file, dependency, or documented intention presented as operational `READY` evidence;
+- a missing or deferred capability recorded only as “skipped,” without status, consequence, fallback, owner, and reevaluation trigger;
+- the same observed absence described as both a current defect and an optional investment without distinct evidence and scope;
+- prose-only policy where a cheap deterministic constraint is appropriate, or a green check presented as proof of product intent;
+- an Agent silently approving its own material plan, acceptance, risk decision, or inferred business rule;
+- a runtime surface selected by habit rather than the changed behavior, evidence without change/environment/action/predicate provenance, or E2E conflated with targeted runtime verification;
+- full E2E forced into every edit or MR/PR regardless of cost, or deferred without an exact trigger, tested revision, owner, blocking target, and failure route;
+- Draft represented as Ready, a repair bypassing applicable review or CI reruns, or an aggregate hiding failed, cancelled, timed-out, missing, or unexpectedly skipped required gates;
+- an implementing Agent's self-review labeled independent, or a provider control called enforced solely because its prompt or configuration exists;
+- knowledge deferred unnecessarily until merge, promoted from unconfirmed feedback, written directly to the default branch, or generated by supposed post-merge automation with no verified trigger and Agent path;
+- low-impact unknowns, duplicated facts, or any future workflow that requires Agentize to remain installed.

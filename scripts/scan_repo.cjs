@@ -9,8 +9,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const DEFAULT_MAX_FILES = 50000;
+const DEFAULT_MAX_DIRECTORIES = 50000;
+const DEFAULT_MAX_DEPTH = 64;
 const MAX_REPORTED_PATHS = 200;
 
 const IGNORED_DIRECTORIES = new Set([
@@ -126,11 +128,11 @@ const AGENT_CONFIG_NAMES = new Set([
 ]);
 
 const DOC_BASENAMES = new Set([
-  'CHANGELOG.md',
-  'CONTRIBUTING.md',
-  'DEVELOPMENT.md',
-  'README.md',
-  'SECURITY.md',
+  'changelog.md',
+  'contributing.md',
+  'development.md',
+  'readme.md',
+  'security.md',
 ]);
 
 const HIGH_SIGNAL_DOC_WORDS = new Set([
@@ -261,6 +263,13 @@ function documentedVerificationCommands(value) {
   let fenceCharacter = null;
   let fenceLength = 0;
   let inspectFence = false;
+  let pendingCommand = null;
+  let pendingLine = 0;
+
+  function hasContinuation(candidate) {
+    const match = candidate.trimEnd().match(/\\+$/);
+    return match !== null && match[0].length % 2 === 1;
+  }
 
   for (const [index, line] of splitLines(value).entries()) {
     const stripped = line.trim();
@@ -283,6 +292,8 @@ function documentedVerificationCommands(value) {
       fenceCharacter = null;
       fenceLength = 0;
       inspectFence = false;
+      pendingCommand = null;
+      pendingLine = 0;
       continue;
     }
     if (!inspectFence || commands.length >= 50) {
@@ -298,7 +309,31 @@ function documentedVerificationCommands(value) {
       candidate.startsWith('#') ||
       candidate.startsWith('//') ||
       candidate.startsWith('- ') ||
-      candidate.startsWith('* ') ||
+      candidate.startsWith('* ')
+    ) {
+      pendingCommand = null;
+      pendingLine = 0;
+      continue;
+    }
+
+    const commandLine = pendingLine || index + 1;
+    if (pendingCommand !== null) {
+      candidate = pendingCommand + ' ' + candidate;
+    }
+
+    if (hasContinuation(candidate)) {
+      pendingCommand = candidate.trimEnd().slice(0, -1).trimEnd();
+      pendingLine = commandLine;
+      if (pendingCommand.length > 1000) {
+        pendingCommand = null;
+        pendingLine = 0;
+      }
+      continue;
+    }
+
+    pendingCommand = null;
+    pendingLine = 0;
+    if (
       candidate.length > 1000 ||
       !COMMAND_START.test(candidate) ||
       !VERIFICATION_COMMAND.test(candidate)
@@ -306,7 +341,7 @@ function documentedVerificationCommands(value) {
       continue;
     }
     commands.push({
-      line: index + 1,
+      line: commandLine,
       definition: redactSensitiveText(candidate),
     });
   }
@@ -337,12 +372,6 @@ function basename(relative) {
 
 function suffix(relative) {
   return path.posix.extname(relative);
-}
-
-function stem(relative) {
-  const name = basename(relative);
-  const extension = path.posix.extname(name);
-  return extension ? name.slice(0, -extension.length) : name;
 }
 
 function isWithinRoot(target, root) {
@@ -384,17 +413,37 @@ function splitLines(text) {
   return lines;
 }
 
-function walkRepository(root, maxFiles, includeVendored) {
+function walkRepository(
+  root,
+  maxFiles,
+  maxDirectories,
+  maxDepth,
+  includeVendored,
+) {
   const files = [];
   const skipped = new Set();
   const skippedSymlinks = new Set();
+  const skippedSpecialFiles = new Set();
   const errors = [];
+  const limitReasons = new Set();
   let truncated = false;
+  let directoriesSeen = 0;
+  let stopScan = false;
 
   function walk(current) {
-    if (truncated) {
+    if (stopScan) {
       return;
     }
+    if (directoriesSeen >= maxDirectories) {
+      skipped.add(relativePath(current, root));
+      truncated = true;
+      limitReasons.add('max_directories');
+      stopScan = true;
+      return;
+    }
+    directoriesSeen += 1;
+    const relativeCurrent = relativePath(current, root);
+    const depth = relativeCurrent ? relativeParts(relativeCurrent).length : 0;
 
     let entries;
     try {
@@ -426,7 +475,13 @@ function walkRepository(root, maxFiles, includeVendored) {
           skippedSymlinks.add(relativePath(entryPath, root));
           continue;
         }
-        regularEntries.push(entry);
+        if (targetStat.isFile()) {
+          regularEntries.push(entry);
+        } else if (targetStat.isDirectory()) {
+          skippedSymlinks.add(relativePath(entryPath, root));
+        } else {
+          skippedSpecialFiles.add(relativePath(entryPath, root));
+        }
       } else if (entry.isDirectory()) {
         const folded = entry.name.toLowerCase();
         const vendored = VENDORED_DIRECTORIES.has(folded);
@@ -438,22 +493,40 @@ function walkRepository(root, maxFiles, includeVendored) {
           continue;
         }
         directories.push(entry);
-      } else {
+      } else if (entry.isFile()) {
         regularEntries.push(entry);
+      } else {
+        skippedSpecialFiles.add(relativePath(entryPath, root));
       }
+    }
+
+    let descend = true;
+    if (depth >= maxDepth && directories.length) {
+      for (const entry of directories) {
+        skipped.add(relativePath(path.join(current, entry.name), root));
+      }
+      truncated = true;
+      limitReasons.add('max_depth');
+      descend = false;
     }
 
     for (const entry of regularEntries) {
       if (files.length >= maxFiles) {
         truncated = true;
+        limitReasons.add('max_files');
+        stopScan = true;
         return;
       }
       files.push(path.join(current, entry.name));
     }
 
+    if (!descend) {
+      return;
+    }
+
     for (const entry of directories) {
       walk(path.join(current, entry.name));
-      if (truncated) {
+      if (stopScan) {
         return;
       }
     }
@@ -464,8 +537,11 @@ function walkRepository(root, maxFiles, includeVendored) {
     files,
     skipped: sortedUnique(skipped),
     skippedSymlinks: sortedUnique(skippedSymlinks),
+    skippedSpecialFiles: sortedUnique(skippedSpecialFiles),
     warnings: errors,
     truncated,
+    directoriesSeen,
+    limitReasons: sortedUnique(limitReasons),
   };
 }
 
@@ -503,15 +579,24 @@ function isHighSignalDoc(relative) {
   if (!new Set(['.md', '.mdx', '.rst']).has(extension)) {
     return false;
   }
-  if (DOC_BASENAMES.has(basename(relative))) {
+  const name = basename(relative).toLowerCase();
+  if (DOC_BASENAMES.has(name) || name.startsWith('readme.')) {
     return true;
   }
   const parts = new Set(relativeParts(relative).map((part) => part.toLowerCase()));
-  const stemWords = stem(relative).toLowerCase().split(/[-_.]/);
-  return (
-    parts.has('docs') &&
-    [...parts, ...stemWords].some((word) => HIGH_SIGNAL_DOC_WORDS.has(word))
+  const signalWords = new Set(
+    relativeParts(relative).flatMap((part) => part.toLowerCase().split(/[-_.]/)),
   );
+  return (
+    (relativeParts(relative).length === 1 || parts.has('docs')) &&
+    Array.from(signalWords).some((word) => HIGH_SIGNAL_DOC_WORDS.has(word))
+  );
+}
+
+function hasArchitectureOrTestingSignal(relative) {
+  return relativeParts(relative)
+    .flatMap((part) => part.toLowerCase().split(/[-_.]/))
+    .some((word) => HIGH_SIGNAL_DOC_WORDS.has(word));
 }
 
 function instructionKind(relative) {
@@ -572,6 +657,7 @@ function isAgentConfig(relative) {
 }
 
 function readText(target, root, maxBytes = 1000000) {
+  let descriptor = null;
   try {
     const resolved = fs.realpathSync(target);
     if (!isWithinRoot(resolved, root)) {
@@ -583,7 +669,14 @@ function readText(target, root, maxBytes = 1000000) {
           ': path resolves outside repository',
       };
     }
-    const size = fs.statSync(resolved).size;
+    const metadata = fs.statSync(resolved);
+    if (!metadata.isFile()) {
+      return {
+        text: null,
+        warning: 'Skipped ' + path.basename(target) + ': not a regular file',
+      };
+    }
+    const size = metadata.size;
     if (size > maxBytes) {
       return {
         text: null,
@@ -595,7 +688,39 @@ function readText(target, root, maxBytes = 1000000) {
           ' bytes',
       };
     }
-    let text = fs.readFileSync(resolved).toString('utf8');
+    descriptor = fs.openSync(
+      resolved,
+      fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0),
+    );
+    if (!fs.fstatSync(descriptor).isFile()) {
+      return {
+        text: null,
+        warning: 'Skipped ' + path.basename(target) + ': not a regular file',
+      };
+    }
+    const chunks = [];
+    let bytesRead = 0;
+    while (bytesRead <= maxBytes) {
+      const buffer = Buffer.alloc(Math.min(65536, maxBytes + 1 - bytesRead));
+      const count = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (count === 0) {
+        break;
+      }
+      chunks.push(buffer.subarray(0, count));
+      bytesRead += count;
+    }
+    if (bytesRead > maxBytes) {
+      return {
+        text: null,
+        warning:
+          'Skipped ' +
+          path.basename(target) +
+          ': file is larger than ' +
+          maxBytes +
+          ' bytes',
+      };
+    }
+    let text = Buffer.concat(chunks, bytesRead).toString('utf8');
     if (text.startsWith('\uFEFF')) {
       text = text.slice(1);
     }
@@ -605,6 +730,14 @@ function readText(target, root, maxBytes = 1000000) {
       text: null,
       warning: 'Unable to read ' + target + ': ' + (error.message || String(error)),
     };
+  } finally {
+    if (descriptor !== null) {
+      try {
+        fs.closeSync(descriptor);
+      } catch {
+        // Preserve the scan result; close failures do not change the evidence.
+      }
+    }
   }
 }
 
@@ -747,16 +880,27 @@ function parsePackageScripts(target, root, scannedLockfiles) {
 }
 
 function detectPackageManager(directory, root, scannedLockfiles) {
-  for (const [name, manager] of [
-    ['pnpm-lock.yaml', 'pnpm'],
-    ['yarn.lock', 'yarn'],
-    ['bun.lock', 'bun'],
-    ['bun.lockb', 'bun'],
-    ['package-lock.json', 'npm'],
-  ]) {
-    if (scannedLockfiles.has(relativePath(path.join(directory, name), root))) {
-      return manager;
+  let current = directory;
+  while (true) {
+    for (const [name, manager] of [
+      ['pnpm-lock.yaml', 'pnpm'],
+      ['yarn.lock', 'yarn'],
+      ['bun.lock', 'bun'],
+      ['bun.lockb', 'bun'],
+      ['package-lock.json', 'npm'],
+    ]) {
+      if (scannedLockfiles.has(relativePath(path.join(current, name), root))) {
+        return manager;
+      }
     }
+    if (current === root) {
+      break;
+    }
+    const parent = path.dirname(current);
+    if (!isWithinRoot(parent, root)) {
+      break;
+    }
+    current = parent;
   }
   return null;
 }
@@ -1098,8 +1242,20 @@ function ecosystemsFor(paths) {
   return ecosystems.sort(rawCompare);
 }
 
-function buildReport(root, maxFiles, includeVendored) {
-  const walked = walkRepository(root, maxFiles, includeVendored);
+function buildReport(
+  root,
+  maxFiles,
+  maxDirectories,
+  maxDepth,
+  includeVendored,
+) {
+  const walked = walkRepository(
+    root,
+    maxFiles,
+    maxDirectories,
+    maxDepth,
+    includeVendored,
+  );
   const files = walked.files;
   const relatives = files.map((target) => relativePath(target, root));
   const languageCounts = new Map();
@@ -1113,9 +1269,10 @@ function buildReport(root, maxFiles, includeVendored) {
   const manifests = capped(
     relatives.filter((relative) => MANIFEST_NAMES.has(basename(relative))),
   );
-  const lockfiles = capped(
-    relatives.filter((relative) => LOCKFILE_NAMES.has(basename(relative))),
+  const allLockfiles = relatives.filter((relative) =>
+    LOCKFILE_NAMES.has(basename(relative)),
   );
+  const lockfiles = capped(allLockfiles);
   const taskRunners = capped(
     relatives.filter((relative) => TASK_RUNNER_NAMES.has(basename(relative))),
   );
@@ -1123,7 +1280,8 @@ function buildReport(root, maxFiles, includeVendored) {
   const qualityConfigs = capped(
     relatives.filter((relative) => QUALITY_CONFIG_NAMES.has(basename(relative))),
   );
-  const docs = capped(relatives.filter(isHighSignalDoc));
+  const allHighSignalDocs = relatives.filter(isHighSignalDoc);
+  const docs = capped(allHighSignalDocs);
   const testPaths = capped(relatives.filter(isTestPath));
   const skills = capped(relatives.filter(isSkillPath));
   const agentConfigs = capped(relatives.filter(isAgentConfig));
@@ -1151,7 +1309,7 @@ function buildReport(root, maxFiles, includeVendored) {
   for (const relative of manifests) {
     const target = pathByRelative.get(relative);
     if (basename(relative) === 'package.json' && packageScripts.length < 50) {
-      const result = parsePackageScripts(target, root, new Set(lockfiles));
+      const result = parsePackageScripts(target, root, new Set(allLockfiles));
       if (result.parsed) {
         packageScripts.push(result.parsed);
       }
@@ -1248,17 +1406,18 @@ function buildReport(root, maxFiles, includeVendored) {
   }
   if (
     files.length >= 100 &&
-    !docs.some((document) =>
-      stem(document)
-        .toLowerCase()
-        .split(/[-_.]/)
-        .some((word) => HIGH_SIGNAL_DOC_WORDS.has(word)),
-    )
+    !allHighSignalDocs.some(hasArchitectureOrTestingSignal)
   ) {
     diagnostics.push('no_high_signal_architecture_or_testing_doc_detected');
   }
-  if (walked.truncated) {
+  if (walked.limitReasons.includes('max_files')) {
     diagnostics.push('scan_truncated_at_file_limit');
+  }
+  if (walked.limitReasons.includes('max_directories')) {
+    diagnostics.push('scan_truncated_at_directory_limit');
+  }
+  if (walked.limitReasons.includes('max_depth')) {
+    diagnostics.push('scan_truncated_at_depth_limit');
   }
   if (versionControl.worktree_state === 'unverified') {
     diagnostics.push('git_worktree_state_unverified');
@@ -1291,11 +1450,19 @@ function buildReport(root, maxFiles, includeVendored) {
     scan: {
       implementation: 'node',
       files_seen: files.length,
+      directories_seen: walked.directoriesSeen,
       max_files: maxFiles,
+      max_directories: maxDirectories,
+      max_depth: maxDepth,
       truncated: walked.truncated,
+      limit_reasons: walked.limitReasons,
       include_vendored: includeVendored,
       skipped_directories: walked.skipped.slice(0, MAX_REPORTED_PATHS),
       skipped_symlinks: walked.skippedSymlinks.slice(0, MAX_REPORTED_PATHS),
+      skipped_special_files: walked.skippedSpecialFiles.slice(
+        0,
+        MAX_REPORTED_PATHS,
+      ),
       warnings: sortedUnique(warnings, 100),
     },
     version_control: versionControl,
@@ -1426,7 +1593,8 @@ function renderMarkdown(report) {
 function usage() {
   return [
     'usage: scan_repo.cjs [--root PATH] [--format json|markdown]',
-    '                     [--max-files NUMBER] [--include-vendored]',
+    '                     [--max-files NUMBER] [--max-directories NUMBER]',
+    '                     [--max-depth NUMBER] [--include-vendored]',
     '',
     'Read a repository and report coding-agent workflow signals.',
   ].join('\n');
@@ -1437,6 +1605,8 @@ function parseArguments(argumentsList) {
     root: '.',
     format: 'json',
     maxFiles: DEFAULT_MAX_FILES,
+    maxDirectories: DEFAULT_MAX_DIRECTORIES,
+    maxDepth: DEFAULT_MAX_DEPTH,
     includeVendored: false,
   };
   for (let index = 0; index < argumentsList.length; index += 1) {
@@ -1462,6 +1632,18 @@ function parseArguments(argumentsList) {
         throw new Error('--max-files requires a value');
       }
       options.maxFiles = Number(argumentsList[index]);
+    } else if (argument === '--max-directories') {
+      index += 1;
+      if (index >= argumentsList.length) {
+        throw new Error('--max-directories requires a value');
+      }
+      options.maxDirectories = Number(argumentsList[index]);
+    } else if (argument === '--max-depth') {
+      index += 1;
+      if (index >= argumentsList.length) {
+        throw new Error('--max-depth requires a value');
+      }
+      options.maxDepth = Number(argumentsList[index]);
     } else if (argument === '--include-vendored') {
       options.includeVendored = true;
     } else if (argument === '--help' || argument === '-h') {
@@ -1496,6 +1678,17 @@ function main(argumentsList) {
     process.stderr.write('--max-files must be positive\n');
     return 2;
   }
+  if (
+    !Number.isInteger(options.maxDirectories) ||
+    options.maxDirectories < 1
+  ) {
+    process.stderr.write('--max-directories must be positive\n');
+    return 2;
+  }
+  if (!Number.isInteger(options.maxDepth) || options.maxDepth < 0) {
+    process.stderr.write('--max-depth must be zero or positive\n');
+    return 2;
+  }
 
   let root;
   try {
@@ -1518,7 +1711,13 @@ function main(argumentsList) {
     return 2;
   }
 
-  const report = buildReport(root, options.maxFiles, options.includeVendored);
+  const report = buildReport(
+    root,
+    options.maxFiles,
+    options.maxDirectories,
+    options.maxDepth,
+    options.includeVendored,
+  );
   if (options.format === 'markdown') {
     process.stdout.write(renderMarkdown(report));
   } else {

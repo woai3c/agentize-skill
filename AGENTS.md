@@ -6,13 +6,13 @@ that repository.
 
 ## Source map
 
-- `SKILL.md`: activation boundary and end-to-end workflow.
-- `DESIGN.md`: proposed architecture, runtime fallback, safety, and acceptance criteria.
-- `references/`: conditional decision guidance loaded by the skill.
-- `scripts/scan_repo.py` and `scripts/scan_repo.cjs`: dependency-free,
-  read-only repository inventory implementations with one shared contract.
-- `tests/test_scanners.py`: deterministic scanner safety, boundary, and
-  cross-runtime parity regressions.
+- `SKILL.md`: activation, safety, coordination, and handoff boundary.
+- `references/assessment.md`: evidence and capability classification.
+- `references/delivery-workflow.md`: normative development-stage and return-loop contract.
+- `references/artifacts.md`: adaptive repository output selection and contents.
+- `references/compatibility.md`: multi-host and provider-specific reconciliation.
+- `scripts/scan_repo.py` and `scripts/scan_repo.cjs`: dependency-free, read-only repository inventory implementations with one shared contract.
+- `tests/test_scanners.py`: deterministic scanner safety, boundary, and cross-runtime parity regressions.
 - `agents/openai.yaml`: Codex and ChatGPT UI metadata.
 
 Keep the entrypoint concise. Put conditional detail in one linked reference and
@@ -27,16 +27,9 @@ Run these commands from the repository root after changes:
 python -m unittest discover -s tests -v
 node scripts/scan_repo.cjs --root . --format markdown
 python scripts/scan_repo.py --root . --format markdown
-uv run --offline --with pyyaml python \
-  /Users/bin/.codex/skills/.system/skill-creator/scripts/quick_validate.py .
 git diff --check
 ```
 
-The skill-creator validator path and its Python environment are environment-
-specific; use the installed path or an existing interpreter with PyYAML when
-they differ. This development validator dependency is not an Agentize scanner
-runtime dependency. Do not add the local path to portable scripts or CI.
+Also run an Agent Skills validator available in the current development environment. In a Codex source checkout, use the installed `skill-creator` validator. Its absolute path and Python environment are host-specific development details, not Agentize runtime dependencies; do not add them to portable scripts or CI.
 
-When changing either scanner, add or update a scanner regression and preserve
-cross-runtime parity. When changing the workflow boundary, keep `SKILL.md`,
-`DESIGN.md`, the relevant reference, and README claims consistent.
+When changing either scanner, add or update a scanner regression and preserve cross-runtime parity. When changing the workflow boundary, update its single owning reference and keep `SKILL.md` plus README claims consistent.

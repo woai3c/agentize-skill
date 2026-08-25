@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from collections import Counter
@@ -15,8 +16,10 @@ from typing import Any, Iterable
 from urllib.parse import unquote
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DEFAULT_MAX_FILES = 50_000
+DEFAULT_MAX_DIRECTORIES = 50_000
+DEFAULT_MAX_DEPTH = 64
 MAX_REPORTED_PATHS = 200
 
 IGNORED_DIRECTORIES = {
@@ -132,11 +135,11 @@ AGENT_CONFIG_NAMES = {
 }
 
 DOC_BASENAMES = {
-    "CHANGELOG.md",
-    "CONTRIBUTING.md",
-    "DEVELOPMENT.md",
-    "README.md",
-    "SECURITY.md",
+    "changelog.md",
+    "contributing.md",
+    "development.md",
+    "readme.md",
+    "security.md",
 }
 
 HIGH_SIGNAL_DOC_WORDS = {
@@ -284,6 +287,13 @@ def documented_verification_commands(text: str) -> list[dict[str, Any]]:
     fence_character: str | None = None
     fence_length = 0
     inspect_fence = False
+    pending_command: str | None = None
+    pending_line = 0
+
+    def has_continuation(candidate: str) -> bool:
+        stripped = candidate.rstrip()
+        trailing = len(stripped) - len(stripped.rstrip("\\"))
+        return trailing % 2 == 1
 
     for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
@@ -303,6 +313,8 @@ def documented_verification_commands(text: str) -> list[dict[str, Any]]:
             fence_character = None
             fence_length = 0
             inspect_fence = False
+            pending_command = None
+            pending_line = 0
             continue
         if not inspect_fence or len(commands) >= 50:
             continue
@@ -310,17 +322,34 @@ def documented_verification_commands(text: str) -> list[dict[str, Any]]:
         candidate = stripped
         if candidate.startswith(("$ ", "> ")):
             candidate = candidate[2:].lstrip()
+        if not candidate or candidate.startswith(("#", "//", "- ", "* ")):
+            pending_command = None
+            pending_line = 0
+            continue
+
+        command_line = pending_line or line_number
+        if pending_command is not None:
+            candidate = f"{pending_command} {candidate}"
+
+        if has_continuation(candidate):
+            pending_command = candidate.rstrip()[:-1].rstrip()
+            pending_line = command_line
+            if len(pending_command) > 1_000:
+                pending_command = None
+                pending_line = 0
+            continue
+
+        pending_command = None
+        pending_line = 0
         if (
-            not candidate
-            or candidate.startswith(("#", "//", "- ", "* "))
-            or len(candidate) > 1_000
+            len(candidate) > 1_000
             or not COMMAND_START.search(candidate)
             or not VERIFICATION_COMMAND.search(candidate)
         ):
             continue
         commands.append(
             {
-                "line": line_number,
+                "line": command_line,
                 "definition": redact_sensitive_text(candidate),
             }
         )
@@ -332,13 +361,21 @@ def capped(values: Iterable[str], limit: int = MAX_REPORTED_PATHS) -> list[str]:
 
 
 def walk_repository(
-    root: Path, max_files: int, include_vendored: bool
-) -> tuple[list[Path], list[str], list[str], list[str], bool]:
+    root: Path,
+    max_files: int,
+    max_directories: int,
+    max_depth: int,
+    include_vendored: bool,
+) -> tuple[list[Path], list[str], list[str], list[str], list[str], bool, int, list[str]]:
     files: list[Path] = []
     skipped: set[str] = set()
     skipped_symlinks: set[str] = set()
+    skipped_special_files: set[str] = set()
     errors: list[str] = []
     truncated = False
+    directories_seen = 0
+    limit_reasons: set[str] = set()
+    stop_scan = False
 
     def on_error(error: OSError) -> None:
         target = getattr(error, "filename", None) or "unknown path"
@@ -348,6 +385,13 @@ def walk_repository(
         root, topdown=True, followlinks=False, onerror=on_error
     ):
         current_path = Path(current)
+        if directories_seen >= max_directories:
+            skipped.add(relative_path(current_path, root))
+            truncated = True
+            limit_reasons.add("max_directories")
+            break
+        directories_seen += 1
+        depth = len(current_path.relative_to(root).parts)
         kept_directories: list[str] = []
         for directory_name in sorted(directory_names, key=portable_name_key):
             directory_path = current_path / directory_name
@@ -360,24 +404,51 @@ def walk_repository(
                 skipped.add(relative_path(directory_path, root))
                 continue
             kept_directories.append(directory_name)
-        directory_names[:] = kept_directories
+        if depth >= max_depth and kept_directories:
+            skipped.update(
+                relative_path(current_path / directory_name, root)
+                for directory_name in kept_directories
+            )
+            directory_names[:] = []
+            truncated = True
+            limit_reasons.add("max_depth")
+        else:
+            directory_names[:] = kept_directories
 
         for file_name in sorted(file_names, key=portable_name_key):
             file_path = current_path / file_name
             if file_path.is_symlink():
                 try:
-                    file_path.resolve(strict=True).relative_to(root)
+                    resolved = file_path.resolve(strict=True)
+                    resolved.relative_to(root)
                 except (OSError, RuntimeError, ValueError):
                     skipped_symlinks.add(relative_path(file_path, root))
                     continue
+                if not resolved.is_file():
+                    skipped_special_files.add(relative_path(file_path, root))
+                    continue
+            elif not file_path.is_file():
+                skipped_special_files.add(relative_path(file_path, root))
+                continue
             if len(files) >= max_files:
                 truncated = True
+                limit_reasons.add("max_files")
+                stop_scan = True
                 break
             files.append(file_path)
-        if truncated:
+        if stop_scan:
             break
 
-    return files, sorted(skipped), sorted(skipped_symlinks), errors, truncated
+    return (
+        files,
+        sorted(skipped),
+        sorted(skipped_symlinks),
+        sorted(skipped_special_files),
+        errors,
+        truncated,
+        directories_seen,
+        sorted(limit_reasons),
+    )
 
 
 def is_ci_path(relative: str) -> bool:
@@ -410,11 +481,23 @@ def is_high_signal_doc(relative: str) -> bool:
     path = Path(relative)
     if path.suffix.casefold() not in {".md", ".mdx", ".rst"}:
         return False
-    if path.name in DOC_BASENAMES:
+    name = path.name.casefold()
+    if name in DOC_BASENAMES or name.startswith("readme."):
         return True
     parts = {part.casefold() for part in path.parts}
-    stem_words = set(re.split(r"[-_.]", path.stem.casefold()))
-    return "docs" in parts and bool((parts | stem_words) & HIGH_SIGNAL_DOC_WORDS)
+    signal_words = set().union(
+        *(set(re.split(r"[-_.]", part.casefold())) for part in path.parts)
+    )
+    return (len(path.parts) == 1 or "docs" in parts) and bool(
+        signal_words & HIGH_SIGNAL_DOC_WORDS
+    )
+
+
+def has_architecture_or_testing_signal(relative: str) -> bool:
+    words = set().union(
+        *(set(re.split(r"[-_.]", part.casefold())) for part in Path(relative).parts)
+    )
+    return bool(words & HIGH_SIGNAL_DOC_WORDS)
 
 
 def instruction_kind(relative: str) -> str | None:
@@ -467,10 +550,33 @@ def read_text(
             resolved.relative_to(root)
         except ValueError:
             return None, f"Skipped {path.name}: path resolves outside repository"
-        size = resolved.stat().st_size
+        metadata = resolved.stat()
+        if not stat.S_ISREG(metadata.st_mode):
+            return None, f"Skipped {path.name}: not a regular file"
+        size = metadata.st_size
         if size > max_bytes:
             return None, f"Skipped {path.name}: file is larger than {max_bytes} bytes"
-        return resolved.read_text(encoding="utf-8-sig", errors="replace"), None
+        descriptor = os.open(
+            resolved,
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0),
+        )
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                return None, f"Skipped {path.name}: not a regular file"
+            chunks: list[bytes] = []
+            remaining = max_bytes + 1
+            while remaining > 0:
+                chunk = os.read(descriptor, min(65_536, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+        finally:
+            os.close(descriptor)
+        data = b"".join(chunks)
+        if len(data) > max_bytes:
+            return None, f"Skipped {path.name}: file is larger than {max_bytes} bytes"
+        return data.decode("utf-8-sig", errors="replace"), None
     except OSError as error:
         return None, f"Unable to read {path}: {error}"
 
@@ -586,15 +692,25 @@ def parse_package_scripts(
 def detect_package_manager(
     directory: Path, root: Path, scanned_lockfiles: set[str]
 ) -> str | None:
-    for name, manager in (
-        ("pnpm-lock.yaml", "pnpm"),
-        ("yarn.lock", "yarn"),
-        ("bun.lock", "bun"),
-        ("bun.lockb", "bun"),
-        ("package-lock.json", "npm"),
-    ):
-        if relative_path(directory / name, root) in scanned_lockfiles:
-            return manager
+    current = directory
+    while True:
+        for name, manager in (
+            ("pnpm-lock.yaml", "pnpm"),
+            ("yarn.lock", "yarn"),
+            ("bun.lock", "bun"),
+            ("bun.lockb", "bun"),
+            ("package-lock.json", "npm"),
+        ):
+            if relative_path(current / name, root) in scanned_lockfiles:
+                return manager
+        if current == root:
+            break
+        parent = current.parent
+        try:
+            parent.relative_to(root)
+        except ValueError:
+            break
+        current = parent
     return None
 
 
@@ -891,9 +1007,28 @@ def ecosystems_for(paths: list[str]) -> list[str]:
     return sorted(ecosystems)
 
 
-def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str, Any]:
-    files, skipped, skipped_symlinks, warnings, truncated = walk_repository(
-        root, max_files, include_vendored
+def build_report(
+    root: Path,
+    max_files: int,
+    max_directories: int,
+    max_depth: int,
+    include_vendored: bool,
+) -> dict[str, Any]:
+    (
+        files,
+        skipped,
+        skipped_symlinks,
+        skipped_special_files,
+        warnings,
+        truncated,
+        directories_seen,
+        limit_reasons,
+    ) = walk_repository(
+        root,
+        max_files,
+        max_directories,
+        max_depth,
+        include_vendored,
     )
     relatives = [relative_path(path, root) for path in files]
     language_counts = Counter(
@@ -905,9 +1040,10 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
     manifests = capped(
         relative for relative in relatives if Path(relative).name in MANIFEST_NAMES
     )
-    lockfiles = capped(
+    all_lockfiles = [
         relative for relative in relatives if Path(relative).name in LOCKFILE_NAMES
-    )
+    ]
+    lockfiles = capped(all_lockfiles)
     task_runners = capped(
         relative for relative in relatives if Path(relative).name in TASK_RUNNER_NAMES
     )
@@ -917,7 +1053,10 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
         for relative in relatives
         if Path(relative).name in QUALITY_CONFIG_NAMES
     )
-    docs = capped(relative for relative in relatives if is_high_signal_doc(relative))
+    all_high_signal_docs = [
+        relative for relative in relatives if is_high_signal_doc(relative)
+    ]
+    docs = capped(all_high_signal_docs)
     test_paths = capped(relative for relative in relatives if is_test_path(relative))
     skills = capped(relative for relative in relatives if is_skill_path(relative))
     agent_configs = capped(relative for relative in relatives if is_agent_config(relative))
@@ -939,7 +1078,7 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
     for relative in manifests:
         path = path_by_relative[relative]
         if path.name == "package.json" and len(package_scripts) < 50:
-            parsed, warning = parse_package_scripts(path, root, set(lockfiles))
+            parsed, warning = parse_package_scripts(path, root, set(all_lockfiles))
             if parsed:
                 package_scripts.append(parsed)
             if warning:
@@ -1006,12 +1145,15 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
     if not ci_files:
         diagnostics.append("no_ci_configuration_detected")
     if len(files) >= 100 and not any(
-        HIGH_SIGNAL_DOC_WORDS & set(re.split(r"[-_.]", Path(path).stem.casefold()))
-        for path in docs
+        has_architecture_or_testing_signal(path) for path in all_high_signal_docs
     ):
         diagnostics.append("no_high_signal_architecture_or_testing_doc_detected")
-    if truncated:
+    if "max_files" in limit_reasons:
         diagnostics.append("scan_truncated_at_file_limit")
+    if "max_directories" in limit_reasons:
+        diagnostics.append("scan_truncated_at_directory_limit")
+    if "max_depth" in limit_reasons:
+        diagnostics.append("scan_truncated_at_depth_limit")
     if version_control.get("worktree_state") == "unverified":
         diagnostics.append("git_worktree_state_unverified")
     if version_control.get("repository_state") == "unverified":
@@ -1031,11 +1173,16 @@ def build_report(root: Path, max_files: int, include_vendored: bool) -> dict[str
         "scan": {
             "implementation": "python",
             "files_seen": len(files),
+            "directories_seen": directories_seen,
             "max_files": max_files,
+            "max_directories": max_directories,
+            "max_depth": max_depth,
             "truncated": truncated,
+            "limit_reasons": limit_reasons,
             "include_vendored": include_vendored,
             "skipped_directories": skipped[:MAX_REPORTED_PATHS],
             "skipped_symlinks": skipped_symlinks[:MAX_REPORTED_PATHS],
+            "skipped_special_files": skipped_special_files[:MAX_REPORTED_PATHS],
             "warnings": sorted(set(warnings))[:100],
         },
         "version_control": version_control,
@@ -1148,6 +1295,24 @@ def parse_arguments(arguments: list[str]) -> argparse.Namespace:
         help=f"Stop after this many files (default: {DEFAULT_MAX_FILES}).",
     )
     parser.add_argument(
+        "--max-directories",
+        type=int,
+        default=DEFAULT_MAX_DIRECTORIES,
+        help=(
+            "Stop after this many directories "
+            f"(default: {DEFAULT_MAX_DIRECTORIES})."
+        ),
+    )
+    parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=DEFAULT_MAX_DEPTH,
+        help=(
+            "Do not descend below this depth from the root "
+            f"(default: {DEFAULT_MAX_DEPTH})."
+        ),
+    )
+    parser.add_argument(
         "--include-vendored",
         action="store_true",
         help="Include vendor and third_party directories in the bounded scan.",
@@ -1160,11 +1325,23 @@ def main(arguments: list[str] | None = None) -> int:
     if options.max_files < 1:
         print("--max-files must be positive", file=sys.stderr)
         return 2
+    if options.max_directories < 1:
+        print("--max-directories must be positive", file=sys.stderr)
+        return 2
+    if options.max_depth < 0:
+        print("--max-depth must be zero or positive", file=sys.stderr)
+        return 2
     root = Path(options.root).expanduser().resolve()
     if not root.is_dir():
         print(f"Repository root is not a directory: {root}", file=sys.stderr)
         return 2
-    report = build_report(root, options.max_files, options.include_vendored)
+    report = build_report(
+        root,
+        options.max_files,
+        options.max_directories,
+        options.max_depth,
+        options.include_vendored,
+    )
     if options.format == "markdown":
         print(render_markdown(report), end="")
     else:

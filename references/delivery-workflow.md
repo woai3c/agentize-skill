@@ -16,23 +16,27 @@ scope -> inventory -> assess -> install or repair -> verify -> handoff -> exit
 The ideal repository workflow is:
 
 ```text
-Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Fast Verification -> Targeted Browser Verification -> MR/PR <-> AI Review + Full CI -> Human Validate -> Merge -> Post-Merge Knowledge Audit -> Improve Harness
+Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification <-> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> AI Review + MR/PR CI -> Merge
 ```
 
 Continuous Knowledge Capture spans Specify through Merge. Shipping and
-observation remain project-specific stages after merge; their confirmed lessons
-feed the same harness owners and, when configured, a later audit.
+observation remain project-specific stages after merge. An automatic Post-Merge
+Knowledge Audit is an optional backstop when its infrastructure is configured;
+it is not part of the minimum daily path. Full E2E is also policy-placed rather
+than fixed in this line: it may run per MR/PR, at a test/staging promotion
+boundary, on a schedule, before release, or in a documented combination.
 
 The bidirectional arrows are real correction loops. Plan feedback can require
-more exploration; verification failures return to implementation; review, CI,
-or Human Validation failures return through implementation and verification
-before the result is reviewed again. Agentize installs or repairs the durable
-paths for those transitions and is not invoked by them.
+more exploration; local verification or Human Local Acceptance failures return
+to implementation; review or CI failures return through local implementation and
+verification before the MR/PR and its gates are updated. Agentize installs or
+repairs the durable paths for those transitions and is not invoked by them.
 
 This line is an ideal target, not a capability claim. Not every repository has
-MR/PR, CI, browser control, E2E infrastructure, deployment, observation, or an
-automated Agent runner. For every material stage, distinguish the ideal contract,
-the repository's evidence state, the operational status defined in
+MR/PR, CI, an exercisable runtime, browser control, E2E infrastructure, preview
+or staging, deployment, observation, or an automated Agent runner. For every
+material stage, distinguish the ideal contract, the repository's evidence state,
+the operational status defined in
 [assessment.md](assessment.md#operational-capability-status), and the outcome of
 the current task. Never represent instructions or a generated file as active
 automation.
@@ -55,7 +59,7 @@ A repository may define a fast path for a change that is all of the following:
 
 The fast path may keep the plan inline and use existing policy as pre-approval.
 It does not skip relevant exploration, verification, truthful handoff, or Human
-Validation when the outcome still requires human judgment. If classification is
+Acceptance when the outcome still requires human judgment. If classification is
 uncertain, use the full path. Do not impose a universal numeric risk score.
 
 ## 1. Specify
@@ -111,7 +115,7 @@ If no interactive plan-review channel exists, use an existing Issue, proposal,
 draft MR/PR, or another durable review surface. If no safe route exists for a
 required decision, record a blocker rather than treating silence as approval.
 
-## 4. Execute, fast verification, and targeted browser verification
+## 4. Execute and Local Fast Verification
 
 Implement only the accepted scope. The local correction loop starts with the
 fastest relevant, low-cost evidence:
@@ -122,111 +126,206 @@ fastest relevant, low-cost evidence:
 4. a build only when the changed surface or project contract requires it;
 5. other focused security or architecture checks that are cheap and applicable.
 
-Do not put the full E2E suite in every edit loop. Full E2E is regression evidence
-for MR/PR CI unless the project has explicitly proved that a focused subset is a
-cheap local check.
+Do not put the full E2E suite in every edit loop. Full E2E is broad regression
+evidence whose trigger belongs to the repository's explicit cost- and risk-aware
+policy; a focused subset may still be a cheap local check when the project has
+proved it useful. A fast-check failure returns to implementation and the affected
+fast checks run again.
 
-After fast verification passes, perform **Targeted AI Browser Business
-Verification** when the task changes an operable Web/UI flow and that capability
-is `READY` for the active Agent host. Validate only the affected Acceptance
-Criteria: start the approved local or test environment, authenticate with the
-approved test identity, navigate, click, enter data, submit, inspect visible
-state, and when useful inspect Network or logs and capture screenshots.
+## 5. Targeted Runtime Verification
 
-Browser verification is not E2E. It requires evidence for all applicable
-prerequisites:
+After Local Fast Verification passes, exercise the changed behavior in the
+closest safe runtime that matches its actual business surface. Verify only the
+affected Acceptance Criteria rather than replaying the complete regression suite.
+Choose the path from repository and task evidence, not from a fixed hierarchy:
 
-- an Agent-accessible browser controller, such as a verified host tool, MCP,
-  DevTools path, or project automation;
-- a safe application start command and reachable environment;
-- approved test account, seed data, authentication setup, and required variables;
-- permission and a repeatable way to inspect the result without production
-  effects.
+| Changed surface | Typical targeted runtime evidence |
+| --- | --- |
+| Web or UI | Start the approved app, use a configured browser controller, authenticate with approved test state, perform the affected user flow, and inspect visible state plus relevant Network, console, or server logs. |
+| Backend API | Start or reach the approved service, send representative requests, assert status and response data, and inspect authorized database side effects, logs, and downstream behavior. |
+| Database or migration | Run against an isolated test database, inspect schema and representative transformed data, and exercise rollback when the migration contract requires it. |
+| Worker or queue | Publish a controlled test message, run the worker, and inspect consumption, retry, idempotency, resulting state, and available logs or metrics. |
+| CLI or script | Invoke the real command with safe representative inputs and inspect stdout, stderr, exit status, generated files, and other permitted side effects. |
 
-### Browser evidence chain
+A library or documentation-only change may have no applicable runtime surface.
+That is `NOT APPLICABLE`, not a reason to fabricate a browser flow. Conversely,
+passing Unit tests does not replace an applicable runtime check merely because
+the repository has no documented way to run it.
 
-When Targeted Browser Verification runs, bind the observed outcome to the change
-that was actually exercised. Record, as applicable:
+### Runtime capability prerequisites
 
-- the tested commit or other trusted change identity; if the run used an
-  uncommitted working tree, disclose that state instead of presenting a commit as
-  exact provenance;
-- the build and start commands, rebuild or restart state, application environment
-  and origin, Agent host, browser controller, and browser scope;
-- the non-secret test identity or role, fixture or seed data, authentication path,
+Targeted Runtime Verification is `READY` only for a named surface and scope when
+all applicable parts are configured and verified:
+
+- an exact build, start, invocation, request, migration, publish, or interaction
+  path available to the active Agent host;
+- a safe local or test environment with approved identity, data, seed,
+  authentication, variables, services, database, or queue as required;
+- permission to cause and inspect the bounded effects without using production
+  credentials or data;
+- precise observable predicates and a repeatable reset or isolation path.
+
+For Web/UI work, readiness also requires an Agent-accessible browser controller,
+such as a verified host tool, MCP, DevTools path, or project automation. Browser
+business verification remains distinct from E2E: the former is an Agent exercising
+the current change's Acceptance Criteria; the latter is automated regression
+coverage run at the repository's selected lifecycle boundary.
+
+### Runtime evidence chain
+
+When Targeted Runtime Verification runs, bind the observed outcome to the change
+actually exercised. Record, as applicable:
+
+- the tested commit or other trusted change identity; disclose an uncommitted
+  worktree rather than presenting a commit as exact provenance;
+- build, start, invocation, restart, migration, or worker state; environment,
+  endpoint or origin; Agent host; controller or client; and runtime scope;
+- non-secret identity or role, inputs, fixtures or seed data, authentication path,
   and initial, reset, or isolated state;
-- the exact Acceptance Criterion, actions, target elements, and observable state
-  predicates used to decide pass or fail;
-- relevant page, Network, console, server-log, screenshot, trace, or video evidence
-  and any material exclusions or exceptions.
+- the exact Acceptance Criterion, actions, requests, messages, commands, and
+  observable state predicates used to decide pass or fail;
+- relevant response, database, file, page, Network, console, log, metric,
+  screenshot, trace, or video evidence and material exclusions.
 
-Prefer state-based waits and assertions tied to the intended element and full
-expected value when a substring, prompt echo, stale page, or nearby duplicate
-could create a false match. A fixed delay may pace an interaction but is not proof
-of the resulting state. Screenshots, traces, or recordings are supporting evidence,
-not a universal requirement and not a substitute for provenance and assertions.
+Use assertions that distinguish the intended result from stale, echoed, partial,
+or nearby state. For Web/UI, prefer state-based waits and full expected values;
+a fixed delay may pace an interaction but is not proof. Screenshots, traces, and
+recordings are supporting evidence, not universal requirements or substitutes for
+provenance and observable predicates.
 
-Framework or tool presence alone is not `READY`, and a browser capability in one
-host does not make every host ready. When prerequisites are incomplete, record
-the operational status and a separate execution outcome. For example:
+Framework, command, configuration, or host-tool presence alone is not `READY`.
+When prerequisites are incomplete, record the capability status and task outcome
+separately. For example:
 
 ```text
-Browser Business Verification: NOT EXECUTED
+Targeted Runtime Verification (Web/UI): NOT EXECUTED
 Capability: SETUP REQUIRED
 Reason: no approved test account or seed path is configured
-Consequence: the affected UI acceptance flow has no Agent-executed browser evidence
-Fallback: Human manual verification required
+Consequence: the affected UI acceptance flow has no Agent-executed runtime evidence
+Fallback: Human manual exercise is required before local acceptance
 Setup: <owned setup-guide path>
 ```
 
-Do not download a browser, select a provider, use production credentials, or
-invent authentication merely to change the status. A backend, CLI, library, or
-documentation task may correctly report browser verification as `NOT APPLICABLE`.
+Do not download a controller, select a provider, invent authentication, or use
+production systems merely to change the status. On failure, debug, modify, rerun
+Local Fast Verification, then rerun every applicable targeted runtime flow. Agent
+Verification answers whether the implementation satisfies the available checks;
+it does not decide whether the requested outcome is the right one.
 
-On any failure, debug, modify, rerun fast verification, then rerun the targeted
-browser flow when applicable. Record commands and flows actually executed,
-results, evidence provenance, exclusions, and consequences. Agent Verification
-answers whether the implementation satisfies the available checks; it does not
-answer whether the stated intent is the right product outcome.
+## 6. Human Local Acceptance
 
-## 5. MR/PR, independent AI review, and full CI
+After applicable local Agent verification passes, the responsible human decides:
+**is this actually what we wanted?** Evaluate the real goal, Acceptance Criteria,
+business behavior, UI/UX where relevant, hidden rules, and possible requirement
+misunderstanding. Agent evidence should make the decision efficient, but the Agent
+must not accept its own interpretation.
 
-When the project uses reviewed branches, create or update an MR/PR only after
-relevant local Agent Verification passes, or disclose the exact blocking check
-when repository policy allows a draft. Creating or updating remote objects still
-requires the authority and tools expected by the host and user.
+If a runtime capability was not executable, expose the missing evidence and named
+manual fallback before asking for acceptance. Manual exercise may supply human
+decision evidence, but it does not retroactively turn the Agent's runtime outcome
+into `PASSED`. Existing policy may pre-authorize a routine, reversible outcome,
+but the Agent cannot grant that authority to itself. Validation depth remains
+risk-based and uses the repository's real owners and terminology.
 
-The MR/PR or equivalent handoff should make these items discoverable without
+Treat Human Local Acceptance as operational only when the repository has a named
+decision owner and a real interaction or durable decision surface. Instructions
+alone do not prove a person will be available or that a decision occurred. If no
+required route exists, record the capability gap and blocker instead of assuming
+silence means acceptance.
+
+If Human Local Acceptance fails, preserve the concrete feedback and return through
+implementation, Local Fast Verification, applicable Targeted Runtime Verification,
+and Human Local Acceptance. Passing tests or runtime checks cannot turn an
+incorrect initial interpretation into an accepted product outcome.
+
+## 7. Draft and Ready MR/PR, independent AI review, and MR/PR CI
+
+A Draft MR/PR may be created earlier for work in progress, early CI, a preview
+environment, or collaboration when the user and platform authorize it. Draft
+existence is not a quality or acceptance claim. The shared gate is **Create or
+Mark MR/PR Ready for Review**, which normally occurs only after applicable local
+Agent Verification passes and Human Local Acceptance is recorded.
+
+The ready MR/PR or equivalent handoff should make these items discoverable without
 replaying the chat:
 
-- goal, acceptance criteria, scope, and accepted plan;
+- goal, Acceptance Criteria, scope, and accepted plan;
 - material deviations and unresolved questions;
 - change summary and risk-sensitive areas;
-- verification evidence, provenance, and exclusions;
-- Human Validation still required.
+- Local Fast and Targeted Runtime evidence, provenance, and exclusions;
+- the Human Local Acceptance decision and any conditional preview or staging
+  acceptance still required.
+
+Creating or updating remote objects requires the authority and tools expected by
+the host and user. For projects without MR/PR, use the closest reviewable change
+and handoff path; do not create provider configuration or claim branch protection
+merely to make the diagram complete.
 
 Prefer an independent Reviewer Agent when its runner, trigger, diff and context
 access, permissions, and failure behavior are configured and verified. The
 implementing Agent's self-review is useful but is not independent. The reviewer
 checks correctness, architecture, maintainability, security, performance where
 relevant, tests, edge cases, hidden assumptions, error handling, and regressions.
-AI review remains machine evidence and never becomes Human Validation merely
-because a different model or session produced it.
+AI review asks whether the implementation is technically sound; it does not
+replace Human Acceptance because a different model or session produced it.
 
-AI review and full CI may run in parallel when the platform supports both. Full
-CI contains the repository's applicable broad regression gates: Unit,
-Integration, full E2E, build, typecheck/Lint, security, architecture, and other
-repository policy checks. Each item is included only when its command,
-environment, data, runner, and failure behavior are configured. Detecting
-Playwright, Cypress, Selenium, or another framework does not by itself make full
-E2E `READY`.
+AI review and MR/PR CI may run in parallel when the platform supports both.
+MR/PR CI contains the repository's applicable per-change gates: Unit,
+Integration, build, typecheck/Lint, security, architecture, and other repository
+policy checks. It includes targeted or full E2E only when the E2E placement policy
+makes that suite a gate for this change. Each item is included only when its
+command, environment, data, runner, and failure behavior are configured.
+
+### E2E placement policy
+
+Do not require full E2E on every MR/PR merely because a suite exists. Choose and
+document its execution boundary using expected duration and monetary cost,
+flakiness, environment contention, change and product risk, regression-detection
+latency, and the consequence of finding a failure later. Common valid policies
+include:
+
+- per-MR/PR targeted or full E2E when it is affordable, reliable, or required by
+  the changed risk surface;
+- an E2E gate at the repository's test or staging promotion boundary, with the
+  exact deployment order and the next environment it blocks made explicit;
+- a scheduled broad regression run, such as nightly or at another owned cadence;
+- a pre-release run against the exact release candidate;
+- a combination, such as cheap smoke E2E per MR/PR and the full suite on a
+  schedule or before release.
+
+Reuse an established, verified project policy. When no authoritative placement
+exists and the alternatives materially trade infrastructure cost or feedback
+latency against release risk, the Agent may present evidence-backed options, but
+the responsible human or repository governance chooses the policy. Do not
+silently install the most expensive cadence or remove a consequential gate.
+
+For each configured E2E path, record the selected suite, trigger or cadence,
+branch/commit/build or release-candidate identity, environment and data, expected
+cost and duration, reliability exclusions, result owner, blocking target, and
+failure route. Detecting Playwright, Cypress, Selenium, or another framework does
+not by itself make the path `READY`.
+
+Capability readiness and current execution are separate. If policy deliberately
+defers E2E beyond the current MR/PR, report its task outcome as `NOT EXECUTED` with
+the policy, next trigger, blocking target, confidence consequence, and fallback.
+That E2E job is not a missing MR/PR gate when policy does not assign it to MR/PR,
+so the precise claim may be “all required MR/PR gates passed”; do not broaden it
+to “full regression passed.” A scheduled or pre-release result proves only the
+exact revision or candidate it exercised, not every earlier MR/PR individually.
+
+An E2E failure blocks the boundary named by policy. A per-change failure returns
+to the current implementation loop. A promotion, scheduled, or pre-release
+failure must create or enter an owned repair path; the fix runs Local Fast and
+applicable Targeted Runtime Verification, MR/PR review and CI, and the relevant
+E2E boundary again before the blocked promotion or release continues.
 
 ### Required-gate accounting
 
-A pipeline may call its required gate set green only when every applicable
-required result is accounted for. A failed, timed-out, cancelled, or unexpectedly
-skipped required job is not success. An intentional conditional exclusion must be
-reported separately as `NOT EXECUTED` or `NOT APPLICABLE`, with its reason,
+A pipeline or lifecycle boundary may call its required gate set green only when
+every gate assigned to that boundary is accounted for. A failed, timed-out,
+cancelled, or unexpectedly skipped required job is not success. An intentional
+conditional exclusion must be reported separately as `NOT EXECUTED` or
+`NOT APPLICABLE`, with its reason,
 consequence, and fallback; it must not disappear behind an aggregate success.
 
 When branch protection or repository policy consumes one stable aggregate check,
@@ -242,63 +341,53 @@ machine-readable inventory or generated gate graph and link other surfaces to it
 Do not introduce that abstraction when the existing gate ownership is already
 clear and reliable.
 
-A failure or actionable finding returns to Execute, fast verification, targeted
-browser verification when applicable and ready, and an updated MR/PR; then the
-affected review and CI gates run again. Preserve finding provenance rather than
-flattening implementing-Agent checks, independent review, CI, policy gates, and
-human decisions into one `verified` flag.
+Every failure or actionable AI-review finding returns to local implementation,
+Local Fast Verification, and applicable Targeted Runtime Verification. Then update
+the MR/PR and rerun AI Review plus the complete applicable MR/PR CI gate set; a fix
+cannot bypass them. Re-run E2E at this point only when its placement policy assigns
+it to the change or the repair addresses an E2E failure. If the fix materially
+changes the behavior that the human accepted, obtain Human Acceptance again before
+merge. Preserve finding provenance rather than flattening implementing-Agent
+checks, independent review, CI, policy gates, and human decisions into one
+`verified` flag.
 
-Do not assume every platform has an independent Agent reviewer, full E2E, or a
-CI runner. Record each capability separately as `READY`, `PARTIAL`,
-`SETUP REQUIRED`, `NOT AVAILABLE`, `UNVERIFIED`, or `NOT APPLICABLE`. Retain
+Add Human Preview or Staging Acceptance only when environment differences,
+production-like integrations, or task risk make local evidence insufficient, for
+example OAuth, payments, migrations, or critical infrastructure. Do not require a
+second identical human ceremony for ordinary work. A failed conditional
+preview/staging gate enters the same local modify, verify, update, and complete
+MR/PR-gate loop.
+
+Do not assume every platform has an independent Agent reviewer, full E2E, preview
+environment, or CI runner. Record each capability separately as `READY`, `PARTIAL`,
+`SETUP REQUIRED`, `NOT CONFIGURED`, `UNVERIFIED`, or `NOT APPLICABLE`. Retain
 working gates and use an explicit fallback rather than calling partial CI "all
 gates passed." Payments, authentication, authorization, security, financial
 calculations, destructive data changes, database migrations, production
-infrastructure, and ambiguous critical business logic commonly need an
-authorized technical owner, subject to the repository's actual policy.
+infrastructure, and ambiguous critical business logic commonly need an authorized
+technical owner, subject to the repository's actual policy.
 
-For projects without MR/PR, use the closest reviewable change and handoff path.
-Do not create provider configuration or claim branch protection merely to make
-the diagram complete.
+## 8. Merge, ship, and observe
 
-## 6. Human Validate
-
-Keep this decision distinct from technical review:
-
-- AI review asks: is the implementation technically sound against the available
-  evidence?
-- Human Validation asks: is the resulting behavior actually what we wanted?
-
-The responsible human evaluates the real goal, acceptance criteria, business
-logic, user experience, hidden rules, and possible requirement misunderstanding.
-Existing policy may pre-authorize routine reversible outcomes, but an Agent does
-not grant itself that authority. Validation depth is risk-based and uses the
-project's real owners and terminology.
-
-If Human Validation fails, record concrete feedback and return through Execute,
-fast verification, targeted browser verification when applicable and ready,
-MR/PR update, AI review, and full CI before validation again. Passing tests, E2E,
-browser verification, AI review, and CI cannot turn an incorrect initial
-interpretation into accepted product intent.
-
-## 7. Merge, ship, and observe
-
-Merge is a separately authorized event. Shipping and observation apply only to
-projects that release or operate something. Make real merge prerequisites,
-rollout, migration, rollback, operational checks, and success or failure signals
-discoverable with their permissions and owners. Do not turn a local library into
-a production service workflow.
+Merge occurs only after every applicable MR/PR gate and any conditional
+preview/staging acceptance are accounted for and passed or resolved by an
+authorized repository policy. It remains a separately authorized event. Shipping
+and observation apply only to projects that release or operate something. Make
+real merge prerequisites, rollout, migration, rollback, operational checks, and
+success or failure signals discoverable with their permissions and owners. Do
+not turn a local library into a production service workflow.
 
 For external effects, distinguish a confirmed failure from an unknown outcome.
 If dispatch started but no authoritative result was recorded, retry only a
 read-only or demonstrably idempotent operation. Otherwise inspect real state or
 ask the responsible person before retrying or compensating.
 
-## 8. Continuous Knowledge Capture
+## 9. Continuous Knowledge Capture
 
 Knowledge capture runs throughout the task and is the primary learning path.
-Whenever the human, implementing Agent, tests, review, or CI reveals a possible
-long-term rule, evaluate it before the implementation MR/PR merges:
+Whenever planning, requirement clarification, Human feedback, implementation,
+debugging, Targeted Runtime Verification, tests, AI or Human review, or CI reveals
+a possible long-term rule, evaluate it before the implementation MR/PR merges:
 
 - **Durable:** likely to remain true beyond this implementation;
 - **Non-obvious:** not reliably recoverable from nearby code alone;
@@ -350,13 +439,13 @@ knowledge MR/PR is the decision surface; an authorized approval must confirm bot
 the fact and whether it deserves long-term ownership. The automation must not infer
 that decision from thread state or merge alone.
 
-## 9. Post-Merge Knowledge Audit
+## 10. Optional Post-Merge Knowledge Audit
 
-The post-merge audit is a fallback for late evidence, not the primary knowledge
-capture mechanism and not a full re-summarization of the change. It checks only
-whether review, CI, Human Validation, final rework, regression discovery,
-architecture decisions, or later observation introduced durable knowledge that
-Continuous Knowledge Capture missed.
+The post-merge audit is an optional fallback for late evidence, not the primary
+knowledge capture mechanism and not a full re-summarization of the change. It
+checks only whether review, CI, conditional preview or staging acceptance, final
+rework, regression discovery, architecture decisions, or later observation
+introduced durable knowledge that Continuous Knowledge Capture missed.
 
 ```text
 merge -> audit late lifecycle evidence -> no missed durable knowledge: end
@@ -389,8 +478,8 @@ event. Do not choose a model vendor, invent a secret, or claim automation from a
 workflow file alone. If repository files can be installed but a developer must
 finish secrets, permissions, branch settings, test accounts, or Agent
 credentials, mark the automatic audit `SETUP REQUIRED` and link an actionable
-setup guide. If no implementation path is selected or available, mark it
-`NOT AVAILABLE`. A manual post-merge checklist may be separately `READY`; it does
+setup guide. If no usable implementation path is configured or selected, mark it
+`NOT CONFIGURED`. A manual post-merge checklist may be separately `READY`; it does
 not make the automatic capability ready.
 
 ## Responsibility summary
@@ -401,7 +490,7 @@ not make the automatic capability ready.
 | Plan | Explore and propose approach, risks, and verification. | Accept consequential direction or request replanning. |
 | Implementation | Change, debug, verify, and report. | Authorize additional destructive, external, or irreversible scope. |
 | Technical quality | Self-review, independent AI review where available, and CI evidence. | Risk-based technical review where policy or consequence requires it. |
-| Product result | Demonstrate the outcome and remaining uncertainty. | Validate when acceptance is not already policy-authorized. |
+| Product result | Demonstrate the outcome and remaining uncertainty. | Accept locally when acceptance is not already policy-authorized; repeat in preview or staging only when environment or risk requires it. |
 | Merge or release | Prepare the change and evidence. | Grant required merge, release, migration, or production authority. |
 | Durable learning | Capture confirmed knowledge continuously and audit late evidence when configured. | Confirm semantic truth and whether it deserves long-term ownership. |
 
@@ -412,7 +501,7 @@ harness. Recommend or document them only when work can be separated,
 verification is reliable, and the repository has a safe answer for worktrees,
 generated files, ports, databases, caches, credentials, and integration
 ownership. More agents must not compensate for unclear intent, weak checks, or
-missing Human Validation.
+missing Human Acceptance.
 
 ## Completion condition
 

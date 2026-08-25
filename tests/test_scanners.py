@@ -37,6 +37,7 @@ def scan(
         errors="replace",
         env=environment,
         check=False,
+        timeout=10,
     )
     if result.returncode != 0:
         raise AssertionError(f"scanner failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
@@ -65,6 +66,7 @@ def scan_with_node(
         errors="replace",
         env=environment,
         check=False,
+        timeout=10,
     )
     if result.returncode != 0:
         raise AssertionError(
@@ -82,6 +84,7 @@ def markdown_with(command: list[str], root: Path) -> str:
         encoding="utf-8",
         errors="replace",
         check=False,
+        timeout=10,
     )
     if result.returncode != 0:
         raise AssertionError(
@@ -202,6 +205,40 @@ class ScanRepositoryTests(unittest.TestCase):
             "no_declared_verification_command_detected", report["diagnostic_hints"]
         )
 
+    def test_multiline_documented_commands_are_joined_and_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(
+                root,
+                "AGENTS.md",
+                "# Rules\n\n"
+                "```text\n"
+                "API_TOKEN=document-secret python -m unittest discover \\\n"
+                "  -s tests \\\n"
+                "  -v\n"
+                "```\n",
+            )
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        expected = [
+            {
+                "line": 4,
+                "definition": (
+                    "API_TOKEN=<redacted> python -m unittest discover -s tests -v"
+                ),
+            }
+        ]
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                commands = report["agent_surface"]["instructions"][0][
+                    "documented_verification_commands"
+                ]
+                self.assertEqual(commands, expected)
+                self.assertNotIn("document-secret", json.dumps(report))
+
     def test_multiple_instruction_surfaces_and_broken_links_are_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -261,6 +298,133 @@ class ScanRepositoryTests(unittest.TestCase):
                     "scan_truncated_at_file_limit", report["diagnostic_hints"]
                 )
 
+    def test_directory_and_depth_limits_are_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "root.txt", "root\n")
+            write(root, "a/inside.txt", "inside\n")
+            write(root, "a/deep/value.txt", "deep\n")
+            write(root, "b/value.txt", "other\n")
+
+            commands = [scan]
+            if NODE_EXECUTABLE is not None:
+                commands.append(scan_with_node)
+            directory_reports = [
+                command(root, "--max-directories", "2") for command in commands
+            ]
+            depth_reports = [command(root, "--max-depth", "1") for command in commands]
+            exact_reports = [
+                command(root, "--max-directories", "4", "--max-depth", "2")
+                for command in commands
+            ]
+
+        for report in directory_reports:
+            with self.subTest(
+                limit="directories", implementation=report["scan"]["implementation"]
+            ):
+                self.assertTrue(report["scan"]["truncated"])
+                self.assertEqual(report["scan"]["directories_seen"], 2)
+                self.assertEqual(report["scan"]["limit_reasons"], ["max_directories"])
+                self.assertIn(
+                    "scan_truncated_at_directory_limit", report["diagnostic_hints"]
+                )
+
+        for report in depth_reports:
+            with self.subTest(
+                limit="depth", implementation=report["scan"]["implementation"]
+            ):
+                self.assertTrue(report["scan"]["truncated"])
+                self.assertEqual(report["scan"]["directories_seen"], 3)
+                self.assertEqual(report["scan"]["limit_reasons"], ["max_depth"])
+                self.assertIn("a/deep", report["scan"]["skipped_directories"])
+                self.assertIn(
+                    "scan_truncated_at_depth_limit", report["diagnostic_hints"]
+                )
+
+        for report in exact_reports:
+            with self.subTest(
+                limit="exact", implementation=report["scan"]["implementation"]
+            ):
+                self.assertFalse(report["scan"]["truncated"])
+                self.assertEqual(report["scan"]["directories_seen"], 4)
+                self.assertEqual(report["scan"]["limit_reasons"], [])
+
+    @unittest.skipUnless(os.name != "nt", "FIFO fixture requires POSIX")
+    def test_special_files_are_skipped_without_blocking(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "README.md", "# Project\n")
+            fifo = root / "AGENTS.md"
+            os.mkfifo(fifo)
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(report["agent_surface"]["instructions"], [])
+                self.assertIn("AGENTS.md", report["scan"]["skipped_special_files"])
+
+    def test_high_signal_docs_include_root_localized_and_nested_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index in range(100):
+                write(root, f"src/file-{index}.py", "pass\n")
+            expected = {
+                "ARCHITECTURE.md",
+                "DESIGN.md",
+                "README.zh-CN.md",
+                "RUNBOOK.md",
+                "docs/architecture/overview.md",
+            }
+            for relative in expected:
+                write(root, relative, f"# {relative}\n")
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertTrue(
+                    expected.issubset(
+                        set(report["documentation"]["high_signal_files"])
+                    )
+                )
+                self.assertNotIn(
+                    "no_high_signal_architecture_or_testing_doc_detected",
+                    report["diagnostic_hints"],
+                )
+
+    def test_high_signal_diagnostic_uses_docs_beyond_the_report_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index in range(100):
+                write(root, f"src/file-{index}.py", "pass\n")
+            for index in range(205):
+                write(root, f"README.locale-{index:03d}.md", "# Localized README\n")
+            write(root, "docs/z/architecture/overview.md", "# Architecture\n")
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(
+                    len(report["documentation"]["high_signal_files"]),
+                    200,
+                )
+                self.assertNotIn(
+                    "docs/z/architecture/overview.md",
+                    report["documentation"]["high_signal_files"],
+                )
+                self.assertNotIn(
+                    "no_high_signal_architecture_or_testing_doc_detected",
+                    report["diagnostic_hints"],
+                )
+
     def test_vendored_directories_are_opt_in(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -297,7 +461,7 @@ class ScanRepositoryTests(unittest.TestCase):
 
             report = scan(root)
 
-        self.assertEqual(report["schema_version"], 4)
+        self.assertEqual(report["schema_version"], 5)
         self.assertEqual(report["project"]["manifests"], [])
         self.assertEqual(report["verification"]["declared_commands"], [])
         self.assertIn("package.json", report["scan"]["skipped_symlinks"])
@@ -324,6 +488,69 @@ class ScanRepositoryTests(unittest.TestCase):
                     report["verification"]["package_scripts"][0]["package_manager"]
                 )
                 self.assertIn("pnpm-lock.yaml", report["scan"]["skipped_symlinks"])
+
+    def test_internal_directory_symlinks_are_skipped_consistently(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "actual/content.txt", "content\n")
+            try:
+                (root / "linked-directory").symlink_to(
+                    root / "actual", target_is_directory=True
+                )
+            except OSError as error:
+                self.skipTest(f"directory symlinks unavailable: {error}")
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertIn(
+                    "linked-directory", report["scan"]["skipped_symlinks"]
+                )
+                self.assertNotIn(
+                    "linked-directory", report["scan"]["skipped_special_files"]
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_workspace_packages_inherit_the_nearest_scanned_lockfile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "pnpm-lock.yaml", "lockfileVersion: 9\n")
+            write(root, "packages/api/package-lock.json", "{}\n")
+            write(
+                root,
+                "packages/api/package.json",
+                '{"scripts":{"test":"node --test"}}\n',
+            )
+            write(
+                root,
+                "packages/web/package.json",
+                '{"scripts":{"test":"node --test"}}\n',
+            )
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(
+                    {
+                        item["source"]: item["package_manager"]
+                        for item in report["verification"]["package_scripts"]
+                    },
+                    {
+                        "packages/api/package.json": "npm",
+                        "packages/web/package.json": "pnpm",
+                    },
+                )
 
     def test_nonstandard_json_constants_are_rejected_consistently(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -635,7 +862,7 @@ class ScanRepositoryTests(unittest.TestCase):
         for report in reports:
             with self.subTest(implementation=report["scan"]["implementation"]):
                 metadata = report["version_control"]
-                self.assertEqual(report["schema_version"], 4)
+                self.assertEqual(report["schema_version"], 5)
                 self.assertIsNone(metadata["is_repository"])
                 self.assertEqual(metadata["repository_state"], "unverified")
                 self.assertEqual(
@@ -668,7 +895,7 @@ class ScanRepositoryTests(unittest.TestCase):
         for report in reports:
             with self.subTest(implementation=report["scan"]["implementation"]):
                 metadata = report["version_control"]
-                self.assertEqual(report["schema_version"], 4)
+                self.assertEqual(report["schema_version"], 5)
                 self.assertIsNone(metadata["is_repository"])
                 self.assertEqual(metadata["repository_state"], "unverified")
                 self.assertEqual(
