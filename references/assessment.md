@@ -3,7 +3,7 @@
 Use this reference to turn repository evidence into a bounded improvement plan.
 The objective is not a maximum score. It is the smallest trustworthy,
 repository-owned harness that lets an ordinary coding agent specify, plan,
-implement, verify, review, and learn after Agentize has been removed, while
+implement, verify, review, and learn after Agentize Skill has been removed, while
 handing real intent, risk, and acceptance decisions to the right humans.
 
 ## Evidence hierarchy
@@ -70,7 +70,7 @@ be strong in one, missing another, and have no need for a third.
 | Fast verification | Relevant Unit and Integration tests, typecheck, Lint, and necessary build commands are exact, safe, and cheap enough for the implementation loop. | Only "run tests"; the full E2E suite is required after every edit; commands need undocumented state. |
 | Targeted runtime verification | Each applicable changed surface has a safe focused runtime path: browser interaction for Web/UI, representative requests for APIs, isolated execution for migrations, controlled messages for workers/queues, or real invocation for CLIs/scripts. Evidence is bound to the tested change, environment, inputs or test state, exact actions, observable predicates, and permitted side effects. | Browser is forced onto non-Web work; Unit tests are presented as runtime proof; a framework or command is assumed usable without environment, data, reset, permissions, or an active host; fixed delays, ambiguous matches, or artifacts without provenance are treated as proof. |
 | Human Local Acceptance | After applicable local Agent verification, a human or established policy decides whether the outcome is actually wanted before the change becomes Ready for Review; failed acceptance returns through implementation and local verification. | Green checks are treated as product approval; an Agent accepts its own interpretation; acceptance first appears after technical MR/PR gates; routine work repeats an identical human ceremony locally and remotely. |
-| Change workflow | An agent can explore, plan, implement, debug, retest, and hand off through explicit correction loops without Agentize. | Commands require undocumented setup; feedback has no return path; future sessions depend on the bootstrap chat. |
+| Change workflow | An agent can explore, plan, implement, debug, retest, and hand off through explicit correction loops without Agentize Skill. | Commands require undocumented setup; feedback has no return path; future sessions depend on the bootstrap chat. |
 | Draft/Ready MR/PR review and CI | Reviewed-branch projects allow Draft MR/PR early without treating it as ready, gate Ready for Review on local verification and Human Local Acceptance, distinguish implementing-Agent evidence from independent AI review where configured, and run the complete applicable per-change MR/PR CI gate set. Every fix returns through local checks, MR/PR update, AI Review, and MR/PR CI. | Draft creation is treated as readiness; an Agent approves itself; a YAML file is assumed active without a runner or permissions; a fix bypasses rerun gates; a green aggregate ignores a failed, cancelled, missing, or unexpectedly skipped result assigned to the MR/PR boundary. |
 | E2E placement and evidence | A cost- and risk-aware policy places targeted or full E2E per MR/PR, at test/staging promotion, on a schedule, before release, or in an explicit combination. Each path names its suite, trigger, revision/candidate, environment/data, cost, owner, blocking target, and failure route; task evidence states when E2E did not run. | Full E2E is forced onto every MR/PR regardless of cost; expensive E2E is deferred with no trigger or owner; framework presence is called readiness; a scheduled result is attributed to a different change; “all regression passed” is claimed when only MR/PR gates ran. |
 | Delivery and observation | Applicable merge, release, rollback, operational checks, and success signals are discoverable with their owners and permissions. | Deployment is mixed into routine checks; no rollback or success signal; production access is assumed. |
@@ -82,7 +82,7 @@ be strong in one, missing another, and have no need for a third.
 | Host enforcement | Consequential restrictions identify their real consumer, enforcement layer, failure behavior and tested scope. | Prompt-only guidance is called a sandbox; an unused policy file is called enforced; approval, review and product acceptance are conflated. |
 | Safety and boundaries | Destructive, costly, credentialed, generated, and release paths are clear. | Blanket prohibitions; copied secrets; release commands mixed into routine verification. |
 | Knowledge gaps | Unknowns are explicit, evidence-backed questions with a path to resolution. | Confident invented rules; vague TODO lists; questions with no impact or owner. |
-| Maintainability | Artifacts have clear owners and update triggers and survive without Agentize. | Generated banners; timestamps that churn; duplicated facts; an external runtime is required. |
+| Maintainability | Artifacts have clear owners and update triggers and survive without Agentize Skill. | Generated banners; timestamps that churn; duplicated facts; an external runtime is required. |
 
 Use these statuses:
 
@@ -123,7 +123,7 @@ reason, consequence, and fallback or human action. Never turn `SETUP REQUIRED`,
 
 Classify capabilities independently; do not collapse them into a score. The
 ideal workflow, evidence assessment, operational status, and current-task
-execution outcome are four different things. An Agentize run can finish honestly
+execution outcome are four different things. An Agentize Skill run can finish honestly
 with unresolved work, but if a request-critical capability is not `READY` and
 has no safe fallback or human decision path, the handoff must describe the
 repository as only partially prepared. This is an outcome rule, not another
@@ -157,9 +157,9 @@ out of normative instructions and add a precise human question.
 ### A mature workflow already exists
 
 Prefer no change or a narrow repair. Do not rename established files, replace
-working conventions, or install Agentize artifacts merely to make the
+working conventions, or install Agentize Skill artifacts merely to make the
 repository resemble another project. Verify that the workflow survives without
-Agentize, that its Capability Report is accurate, that confirmed knowledge can be
+Agentize Skill, that its Capability Report is accurate, that confirmed knowledge can be
 captured in active work, and that late post-merge corrections have a durable
 fallback. Report why the existing harness is sound and any optional improvements
 separately.
@@ -198,4 +198,4 @@ Reject the common weak signals in the rubric above, especially patches that prim
 - Draft represented as Ready, a repair bypassing applicable review or CI reruns, or an aggregate hiding failed, cancelled, timed-out, missing, or unexpectedly skipped required gates;
 - an implementing Agent's self-review labeled independent, or a provider control called enforced solely because its prompt or configuration exists;
 - knowledge deferred unnecessarily until merge, promoted from unconfirmed feedback, written directly to the default branch, or generated by supposed post-merge automation with no verified trigger and Agent path;
-- low-impact unknowns, duplicated facts, or any future workflow that requires Agentize to remain installed.
+- low-impact unknowns, duplicated facts, or any future workflow that requires Agentize Skill to remain installed.

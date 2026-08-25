@@ -1232,7 +1232,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         "Unverified" if is_repository is None else str(is_repository)
     )
     lines = [
-        "# Agentize repository inventory",
+        "# Agentize Skill repository inventory",
         "",
         f"- Root: `{report['root']}`",
         f"- Files scanned: {report['scan']['files_seen']}",

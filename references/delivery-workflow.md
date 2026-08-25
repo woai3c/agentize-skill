@@ -1,13 +1,13 @@
 # Ideal AI-native development workflow
 
 Use this reference to assess, install, or repair the development workflow that
-must remain usable after Agentize exits. It defines stage contracts and human
+must remain usable after Agentize Skill exits. It defines stage contracts and human
 decision boundaries; it is not a fixed document template or an orchestrator that
 future work must call.
 
 ## Separate bootstrap from daily development
 
-Agentize itself performs one bounded reconciliation:
+Agentize Skill itself performs one bounded reconciliation:
 
 ```text
 scope -> inventory -> assess -> install or repair -> verify -> handoff -> exit
@@ -29,7 +29,7 @@ boundary, on a schedule, before release, or in a documented combination.
 The bidirectional arrows are real correction loops. Plan feedback can require
 more exploration; local verification or Human Local Acceptance failures return
 to implementation; review or CI failures return through local implementation and
-verification before the MR/PR and its gates are updated. Agentize installs or
+verification before the MR/PR and its gates are updated. Agentize Skill installs or
 repairs the durable paths for those transitions and is not invoked by them.
 
 This line is an ideal target, not a capability claim. Not every repository has
@@ -508,7 +508,7 @@ missing Human Acceptance.
 
 ## Completion condition
 
-The durable workflow is prepared when an ordinary coding agent, with Agentize
+The durable workflow is prepared when an ordinary coding agent, with Agentize Skill
 removed, can discover the ideal path, read the current Harness Capability Report,
 identify configured and human-owned transitions, produce reviewable evidence,
 capture a confirmed lesson during work, and avoid claiming unavailable gates.

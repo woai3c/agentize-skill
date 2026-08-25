@@ -167,7 +167,7 @@ bootstrap.
 
 ## Choosing a larger product surface
 
-Keep Agentize as a skill plus local scanner while existing model tools can
+Keep Agentize Skill as a skill plus local scanner while existing model tools can
 inspect and edit the repository. Escalate only for demonstrated needs:
 
 | Need | Appropriate surface |

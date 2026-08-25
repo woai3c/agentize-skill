@@ -1,11 +1,11 @@
 ---
-name: agentize
-description: "Bootstrap, audit, or repair a repository-owned AI development harness: scoped context, human-reviewed planning, local and runtime verification, human acceptance, MR/PR gates, capability reporting, and durable knowledge capture. Use when asked to agentize or make an existing codebase agent-ready, or to reconcile incomplete, conflicting, or stale agent instructions, docs, checks, CI, and workflow guidance. Do not use for ordinary feature implementation or a one-off code review."
+name: agentize-skill
+description: "Bootstrap, audit, or repair a repository-owned AI development harness: scoped context, human-reviewed planning, local and runtime verification, human acceptance, MR/PR gates, capability reporting, and durable knowledge capture. Use when asked for Agentize Skill, $agentize-skill, an agent-ready codebase, or reconciliation of incomplete, conflicting, or stale agent instructions, docs, checks, CI, and workflow guidance. Do not use for ordinary feature implementation or a one-off code review."
 ---
 
-# Agentize
+# Agentize Skill
 
-Turn an existing repository into a self-contained, human-in-the-loop environment in which future coding agents can find the right context, follow a reliable delivery loop, expose missing capabilities honestly, and improve durable knowledge. Bootstrap or repair that repository-owned system, then exit: **Agentize should leave behind the system, not become the system.**
+Turn an existing repository into a self-contained, human-in-the-loop environment in which future coding agents can find the right context, follow a reliable delivery loop, expose missing capabilities honestly, and improve durable knowledge. Bootstrap or repair that repository-owned system, then exit: **Agentize Skill should leave behind the system, not become the system.**
 
 Use one adaptive workflow. Do not ask the user to choose an internal mode. An explicit audit-only, report-only, review-only, or `do not modify` request stays read-only; otherwise make the smallest evidence-backed changes needed for the requested outcome. A mature repository may correctly require no change.
 
@@ -86,11 +86,11 @@ Before adding dependencies, modifying lockfiles, downloading tools, creating mat
 This section applies to non-audit runs, including deliberate no-change outcomes. Use evidence proportional to the actual changes:
 
 1. Re-run an available scanner or repeat the bounded inventory.
-2. Check every added path, relative link, documented command, capability claim, and repository workflow for accidental Agentize dependency.
+2. Check every added path, relative link, documented command, capability claim, and repository workflow for accidental Agentize Skill dependency.
 3. Inspect command definitions before execution, then run only safe relevant checks allowed by the user, repository instructions, and host policy.
 4. Run validators that govern changed artifacts when available.
 5. Inspect the complete change set through a trusted host diff or exact applied patches and confirm unrelated work remains untouched. Use `git diff --check` only when repository conversion drivers are trusted; otherwise report an equivalent check as `NOT EXECUTED` with its consequence.
 
 Report the starting condition; material changes or evidence-backed no-change result; durable entrypoint and fact owners; Harness Capability Report; separate task outcomes; setup guides and human fallbacks; unresolved `Observed`/`Inferred`/`Unknown` items; and optional next investments. Separate Agent verification evidence from Human Acceptance still required.
 
-Never call an ideal stage configured merely because its instructions exist, or describe a result as accepted, shipped, all-gates-passed, production-safe, or fully agent-ready without the corresponding operational evidence and authorized human decision. If a request-critical capability remains unresolved, call the result partially prepared and name the blocker. Leave no Hook, CI job, generated-file manager, or future workflow that invokes Agentize.
+Never call an ideal stage configured merely because its instructions exist, or describe a result as accepted, shipped, all-gates-passed, production-safe, or fully agent-ready without the corresponding operational evidence and authorized human decision. If a request-critical capability remains unresolved, call the result partially prepared and name the blocker. Leave no Hook, CI job, generated-file manager, or future workflow that invokes Agentize Skill.

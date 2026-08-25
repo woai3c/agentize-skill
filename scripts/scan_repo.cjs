@@ -1512,7 +1512,7 @@ function renderMarkdown(report) {
         ? 'True'
         : 'False';
   const lines = [
-    '# Agentize repository inventory',
+    '# Agentize Skill repository inventory',
     '',
     '- Root: ' + tick + report.root + tick,
     '- Files scanned: ' + report.scan.files_seen,

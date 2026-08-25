@@ -125,7 +125,7 @@ records `NOT EXECUTED`, its next trigger, and the narrower confidence claim.
 
 The report is repository-owned after bootstrap. Future Agents update the affected
 row when a prerequisite, host, platform, command, permission, or representative
-verification changes; they do not wait for Agentize to be run again. Keep stable
+verification changes; they do not wait for Agentize Skill to be run again. Keep stable
 evidence and reevaluation rules rather than volatile status theater.
 
 ## Setup guides and human-owned TODOs
@@ -138,7 +138,7 @@ guide in the repository's existing setup documentation. If no owner exists,
 Each guide states:
 
 - current status and intended scope;
-- what Agentize already installed or verified;
+- what Agentize Skill already installed or verified;
 - exact human-owned prerequisites and why they cannot be automated safely;
 - required external settings, accounts, test data, permissions, and secret
   **names**, never secret values;
@@ -201,7 +201,7 @@ Apply the workflow's [`Observed`/`Inferred`/`Unknown` provenance](delivery-workf
 
 Use the project's existing Issue, specification, proposal, MR/PR, or task format as the owner of intent and plan decisions. Repair its repository-visible template or guidance only when a consequential field or decision route from [Specify](delivery-workflow.md#1-specify) or [Plan Review](delivery-workflow.md#3-plan-and-human-plan-review) is missing. The surface must be able to carry goal, context, constraints, success and Acceptance Criteria, scope, risk, unknowns, the proposed route, verification plan, Human Plan Review decision, and material feedback without replaying a chat.
 
-Persist a plan only when review, coordination, resumption, or a consequential tradeoff benefits from it; otherwise an inline fast-path plan is enough. Do not create a second task system when an external tracker is authoritative. Agentize may draft structure and precise questions, but it cannot invent business meaning, approve its proposal, or derive Acceptance Criteria solely from an implementation.
+Persist a plan only when review, coordination, resumption, or a consequential tradeoff benefits from it; otherwise an inline fast-path plan is enough. Do not create a second task system when an external tracker is authoritative. Agentize Skill may draft structure and precise questions, but it cannot invent business meaning, approve its proposal, or derive Acceptance Criteria solely from an implementation.
 
 ## Verification ladder and E2E placement
 
@@ -252,7 +252,7 @@ Make Continuous Knowledge Capture discoverable in the daily workflow and handoff
 
 If the repository chooses automatic Post-Merge Knowledge Audit, its artifacts must identify the real merge trigger, trusted extraction command, headless Agent and project-selected model integration, scoped permissions and data boundary, cost and failure behavior, lifecycle context, and separate human-reviewed Knowledge MR/PR path. Prefer hosted events over local `.git/hooks`. Use `SETUP REQUIRED` while external setup remains and `NOT CONFIGURED` when no implementation is selected. A manual checklist is a separate capability and does not make automation ready.
 
-Neither path may invoke Agentize, treat untrusted lifecycle text as instructions, write directly to the default branch, or create churn when no knowledge qualifies.
+Neither path may invoke Agentize Skill, treat untrusted lifecycle text as instructions, write directly to the default branch, or create churn when no knowledge qualifies.
 
 ### Knowledge ownership and executable enforcement
 
@@ -275,7 +275,7 @@ Choose filenames that describe the content, such as `business-rules.md`,
 `observability.md`. Create only files with evidence-backed content. Do not create
 every example file or directory merely to complete the taxonomy.
 
-`ARCHITECTURE.md` is not a cross-host convention and is not a default Agentize
+`ARCHITECTURE.md` is not a cross-host convention and is not a default Agentize Skill
 output. Preserve or repair it when the repository already uses it as a maintained
 architecture owner. Otherwise place newly required architecture knowledge under
 `docs/architecture/` and link it from the root instruction source.
@@ -352,4 +352,4 @@ required. Do not use a hook merely to inject more prose into every session.
 - Keep provider compatibility thin; never maintain identical policy manually
   in several files.
 - Run existing formatters and doc validators that govern changed artifacts.
-- On a repeat Agentize run, a sound repository should produce no material diff.
+- On a repeat Agentize Skill run, a sound repository should produce no material diff.
