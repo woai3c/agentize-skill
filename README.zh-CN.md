@@ -146,6 +146,7 @@ Agentize Skill 会先尝试 Node.js 扫描器；如果第一套实现不可用�
 - `scripts/scan_repo.py` 和 `scripts/scan_repo.cjs` 实现同一个无第三方依赖的扫描器契约。
 - `tests/test_scanners.py` 包含确定性的扫描器安全、边界和跨运行时 parity 回归测试。
 - `tests/test_package_identity.py` 防止仓库名、Skill 名、Selector 和安装路径再次出现漂移。
+- `.github/workflows/ci.yml` 会在推送到 `main` 和 Pull Request 时运行确定性测试、两套扫描器、语法检查与 Skill 包校验。
 - `agents/openai.yaml` 是可选的 OpenAI UI 元数据，不属于厂商中立核心。
 
 ## 开发
@@ -159,9 +160,9 @@ python scripts/scan_repo.py --root . --format markdown
 git diff --check
 ```
 
-另外还应使用当前开发环境可用的 Agent Skills Validator 验证 Skill。在 Codex 源码环境中可使用已安装 `skill-creator` 的 Validator；其绝对路径和 PyYAML 环境与宿主有关，不能写入便携脚本或 CI。
+另外还应使用当前开发环境可用的 Agent Skills Validator 验证 Skill。在 Codex 源码环境中可使用已安装 `skill-creator` 的 Validator；其绝对路径和 PyYAML 环境与宿主有关，不能写入便携脚本或 CI。GitHub CI 会改用固定 Revision 的上游 `skills-ref` 参考 Validator，并且只把它作为开发期工具。
 
-Python `unittest` Suite 只属于开发 Harness，不是安装依赖；Node.js 可用时它会同时验证两套扫描器。扫描器行为已有确定性回归覆盖，但本仓库没有交付跨宿主 Agent 行为 Eval Harness，也不声称所有宿主具有相同的 Skill 发现、Sandbox、审批、Hook、Context Refresh 或委派语义。
+Python `unittest` Suite 只属于开发 Harness，不是安装依赖；Node.js 可用时它会同时验证两套扫描器。扫描器行为已有确定性回归覆盖。跨宿主行为 Eval 会在多个 Agent 产品中实际运行 Agentize Skill，并对它在受控仓库中的操作进行评分；这需要额外的宿主 Runtime、凭据、模型调用、Trace 采集和行为判定。它被有意放在确定性的 Pull Request CI 之外，不影响 Skill 的安装和使用；本仓库也不声称所有宿主具有相同的 Skill 发现、Sandbox、审批、Hook、Context Refresh 或委派语义。
 
 ## 许可证
 

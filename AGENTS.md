@@ -14,6 +14,7 @@ that repository.
 - `scripts/scan_repo.py` and `scripts/scan_repo.cjs`: dependency-free, read-only repository inventory implementations with one shared contract.
 - `tests/test_scanners.py`: deterministic scanner safety, boundary, and cross-runtime parity regressions.
 - `tests/test_package_identity.py`: canonical Skill name, display name, selector, and installation-path regression.
+- `.github/workflows/ci.yml`: read-only GitHub CI for tests, scanner execution, syntax, and package validation.
 - `agents/openai.yaml`: Codex and ChatGPT UI metadata.
 
 Keep the entrypoint concise. Put conditional detail in one linked reference and
@@ -32,5 +33,7 @@ git diff --check
 ```
 
 Also run an Agent Skills validator available in the current development environment. In a Codex source checkout, use the installed `skill-creator` validator. Its absolute path and Python environment are host-specific development details, not Agentize Skill runtime dependencies; do not add them to portable scripts or CI.
+
+GitHub CI runs the deterministic suite with Python and Node.js and validates the package with a pinned revision of the upstream `skills-ref` reference validator. This is development-only tooling; the installed Skill and both scanners remain dependency-free.
 
 When changing either scanner, add or update a scanner regression and preserve cross-runtime parity. When changing the workflow boundary, update its single owning reference and keep `SKILL.md` plus README claims consistent.

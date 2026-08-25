@@ -146,6 +146,7 @@ Agentize Skill tries the Node.js scanner first, then Python when the first imple
 - `scripts/scan_repo.py` and `scripts/scan_repo.cjs` implement the same dependency-free scanner contract.
 - `tests/test_scanners.py` contains deterministic scanner safety, boundary, and cross-runtime parity regressions.
 - `tests/test_package_identity.py` prevents the repository name, Skill name, selector, and installation path from drifting apart again.
+- `.github/workflows/ci.yml` runs the deterministic tests, both scanners, syntax checks, and Skill package validation on pushes to `main` and pull requests.
 - `agents/openai.yaml` is optional OpenAI UI metadata and is not part of the vendor-neutral core.
 
 ## Development
@@ -159,9 +160,9 @@ python scripts/scan_repo.py --root . --format markdown
 git diff --check
 ```
 
-Also validate the Skill with an Agent Skills validator available in the current development environment. In a Codex source checkout, use the installed `skill-creator` validator; its absolute path and PyYAML environment are host-specific and must not be committed to portable scripts or CI.
+Also validate the Skill with an Agent Skills validator available in the current development environment. In a Codex source checkout, use the installed `skill-creator` validator; its absolute path and PyYAML environment are host-specific and must not be committed to portable scripts or CI. GitHub CI instead installs a pinned revision of the upstream `skills-ref` reference validator as development-only tooling.
 
-The Python `unittest` suite is a development harness, not an installation dependency. It exercises both scanners when Node.js is available. Scanner behavior has deterministic regression coverage, but this repository does not ship a cross-host agent-behavior evaluation harness or claim that every host has identical discovery, sandbox, approval, Hook, context-refresh, or delegation semantics.
+The Python `unittest` suite is a development harness, not an installation dependency. It exercises both scanners when Node.js is available. Scanner behavior has deterministic regression coverage. A cross-host behavior evaluation would actually launch Agentize Skill in multiple agent products and score their actions on controlled repositories; that requires separate host runtimes, credentials, model calls, trace capture, and behavioral grading. It is intentionally outside deterministic pull-request CI, is not required to install or use the Skill, and this repository does not claim that every host has identical discovery, sandbox, approval, Hook, context-refresh, or delegation semantics.
 
 ## License
 
