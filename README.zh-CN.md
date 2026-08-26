@@ -33,7 +33,7 @@ https://github.com/woai3c/agentize-skill
 
 一次普通 Bootstrap 会：
 
-1. 绑定准确目标，并在 Discovery 阶段不执行项目代码的前提下，清点现有 Agent 指令、文档、Manifest、命令、测试、CI、运行时路径和知识学习机制；
+1. 绑定准确目标，并在 Discovery 阶段不执行项目代码、也不把仓库内嵌套安装的 Agentize Skill 当成项目证据的前提下，清点现有 Agent 指令、文档、Manifest、命令、测试、CI、运行时路径和知识学习机制；
 2. 用直接证据对照理想的 AI Native Workflow，并区分 Observed Fact、Inference、Unknown、Operational Readiness 和当前任务结果；
 3. 优先修复已有事实来源，只补充最小必要的仓库自有指令、上下文、验证、评审、验收和知识捕获路径；
 4. 当凭据、权限、账号、测试数据、浏览器控制、Runner、外部设置或模型接入仍需要人类处理时，生成聚焦的配置说明；
@@ -54,13 +54,25 @@ Agentize Skill 会让根 Agent 指令文件保持简洁并主要承担导航职�
 
 ## 它留下的工作流
 
+为了让主流程保持易读，图片有意简化了部分反馈箭头。需求或已接受方案本身有问题时，应返回 Specify 或 Plan；实现或评审发现缺陷时，应按需返回 Execute，并重新经过相关验证、独立复审与 Human Acceptance。
+
+[![AI 高效开发工作流，展示规划、自验证、独立评审、人工验收、MR/PR Gate 与知识沉淀](docs/workflow.png)](docs/workflow.png)
+
 ```text
-Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification <-> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> AI Review + MR/PR CI -> Merge
+Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification -> Independent Reviewer Agent -> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> Platform AI Review + MR/PR CI -> Merge
 ```
 
 Continuous Knowledge Capture 贯穿整个开发过程。Full E2E 遵循仓库明确的 Cost/Risk-aware Policy，可以放在每个 MR/PR、测试或预发布环境晋级、固定时间、Release 前，或采用有文档说明的组合策略。Ship 与生产观察只适用于相应类型的项目。自动 Post-Merge Knowledge Audit 只是用于检查开发后期遗漏 Durable Knowledge 的可选兜底，不是最小日常步骤。
 
-这是理想工作流，不表示每个仓库已经支持所有阶段。Agentize Skill 会分别表达 Workflow Contract、Repository Evidence、Capability Readiness、Human Setup 和当前执行结果。详细的职责与返工循环规则位于 [`references/delivery-workflow.md`](references/delivery-workflow.md)。
+图片展示的是理想的完整路径，不代表 Agentize Skill 能在每个仓库中激活全部阶段。Agentize Skill 只会创建或修复有仓库证据、当前工具、授权和合理成本支持的仓库自有部分，并分别表达 Workflow Contract、Repository Evidence、Capability Readiness、Human Setup 和当前执行结果。详细的职责与返工循环规则位于 [`references/delivery-workflow.md`](references/delivery-workflow.md)。
+
+| Agentize Skill 在条件支持时可以建立 | 仍可能需要人类或外部平台配置 |
+| --- | --- |
+| 简洁的 Agent 指令与上下文导航；适配仓库的 Workflow Contract；经过验证的项目命令与验证指南；Harness Capability Report；聚焦的 Setup Guide；以及在项目证据和授权支持时安全增加的仓库本地 Test、Rule、Script 或 CI 定义。 | 产品意图、Plan Approval、风险决策和 Acceptance；凭据、账号、测试身份与数据；Browser 或 Runtime Environment；外部 CI 与 Forge 设置；Branch Protection；平台 Reviewer Agent Runner 与模型接入；Preview 或 Staging；Observability；部署权限；Merge-trigger Automation。 |
+
+如果图片中的某个阶段不可用，Agentize Skill 会记录它在明确作用域内的状态、影响、Fallback 和所需配置。生成一份指令、Workflow 文件或 Template，并不能证明对应自动化已经生效。
+
+对于非琐碎任务，如果具备可用的 Fresh-context Reviewer Agent，它会在 Human Local Acceptance 之前审查 Candidate 和已有验证证据，并把 Findings 送回实现与验证循环。Implementer Self-review 会明确标为非独立；同一模型的新 Session 可以提供 Context Separation，但不等于 Model Diversity。Repository Policy 认为确定性检查已经足够时，Fast Path 可以省略第二个 Agent。Platform AI Review 会作为另一项能力单独评估，并且只有远程自动化真实配置后才存在。
 
 每项适用能力使用一种 Operational Status：
 
@@ -75,7 +87,9 @@ Continuous Knowledge Capture 贯穿整个开发过程。Full E2E 遵循仓库明
 
 当前任务中的检查另行使用 `PASSED`、`FAILED`、`NOT EXECUTED` 或 `NOT APPLICABLE`。一个文件、依赖、Workflow 定义或绿色测试，本身不能证明能力已经 Ready，也不能证明实现符合人类真实意图。
 
-Agentize Skill 不能虚构产品意图、批准自己的 Plan 或 Acceptance、替人选择风险容忍度、提供不存在的凭据或基础设施、证明外部分支保护已经生效，也不能在缺少真实 Runner 和项目已选择模型接入时凭空创建独立 AI Reviewer 或合并后 Agent。无法安全建立必需能力时，正确结果是明确缺口、配置路径和人工 Fallback，而不是伪造自动化。
+对于本次 Bootstrap 修改的 Artifact，交接还会单独记录已由证据证明的最高仓库交付阶段：`WORKTREE ONLY`、`COMMITTED` 或 `PUSHED`。`PLATFORM ACTIVE` 是另一项独立且绑定 Revision 的声明，只有在 Forge 或 Runner 行为得到直接验证时才能使用。本地 PR Template 或 CI 文件不能被描述为已在 Forge 上生效。
+
+Agentize Skill 不能虚构产品意图、批准自己的 Plan 或 Acceptance、替人选择风险容忍度、提供不存在的凭据或基础设施，也不能证明外部分支保护已经生效。本地 Independent Reviewer Agent 依赖指定宿主中经过验证的 Fresh Session 或 Delegation Boundary；自动 Platform Reviewer 或 Post-merge Agent 还需要真实 Runner、权限和项目已选择的模型接入。无法安全建立必需能力时，正确结果是明确缺口、配置路径和人工 Fallback，而不是伪造自动化。
 
 ## 安装与使用
 
@@ -119,6 +133,8 @@ Agentize Skill 不能虚构产品意图、批准自己的 Plan 或 Acceptance、
 
 前者可供该用户的多个仓库使用；后者只作用于对应仓库树。其他宿主可能采用不同约定，所以 `.agents/skills` 不是通用强制规则。
 
+推荐使用用户级安装，因为 Agentize Skill 是一次性 Bootstrap 工具，不是目标项目依赖。如果宿主把它安装在目标仓库内，扫描器会从项目证据中排除这个精确的 Skill 包。Agentize Skill 不会仅为迁就自己的文件而修改目标项目的 Ignore、Formatter、Lint、Typecheck、测试、构建、包或 CI 配置；如果安装副本干扰项目检查，应把它移到用户级作用域。
+
 ## 扫描器
 
 普通用户无需手动运行扫描器。两套实现都只使用对应运行时的标准库，执行静态只读清点，并且绝不会执行已声明的项目命令：
@@ -130,9 +146,11 @@ python scripts/scan_repo.py --root /path/to/repository --format markdown
 python scripts/scan_repo.py --root /path/to/repository --format json
 ```
 
-Schema v5 会限制文件数、目录数、扫描深度和单文件字节数；跳过非普通文件与指向仓库外部的符号链接；保守识别验证命令；并对常见凭据语法做尽力脱敏。报告仍然属于敏感本地证据，共享前必须检查。可以通过 `--max-files`、`--max-directories` 和 `--max-depth` 调整限制；任何触发的限制都会明确记录在 `scan.limit_reasons` 和诊断信息中。
+Schema v7 会限制文件数、目录数、扫描深度、单文件字节数与报告列表大小；跳过目录符号链接和非普通文件，以及会重新进入已排除、已忽略、Vendored、超深度或仓库外路径的文件符号链接；清点能够识别的指令规则、Reviewer 指南、Agent Definition、Prompt、Command 或 Workflow，以及在 Markdown 正文中保守识别出的 Claude、Gemini 和 Copilot-compatible 直接 `@path` 导入边；保守识别验证命令；并对常见凭据语法做尽力脱敏。被导入文件还可能继续导入其他文件，因此评估 Agent 会按需递归跟进相关边，而不会把直接清点结果当作完整 Context Graph。报告仍然属于敏感本地证据，共享前必须检查。遍历限制分别记录在 `scan.truncated` 和 `scan.limit_reasons`；访问失败与相关解析失败记录在 `scan.warnings`；`scan.traversal_incomplete` 同时涵盖因限制或访问失败造成的不完整遍历；报告字段的有界截断另行记录在 `scan.report_truncated` 与 `scan.report_truncated_sections`，生态判断仍使用本次扫描发现的完整 Manifest 集合。遍历或相关证据收集不完整时，缺失诊断会标为 Detection Incomplete，而不是给出确定性结论。可以通过 `--max-files`、`--max-directories` 和 `--max-depth` 调整遍历限制。
 
-Git 查询会清除继承的 `GIT_*` 仓库选择变量，并且只检查仓库身份与分支。它不会运行 `status` 或 `diff`，因为内容比较可能执行仓库配置的 Filter。因此 Worktree State 会报告为 `unverified`，绝不会静默当作 Clean。Repository Identity 使用三态：`true` 表示已验证，`false` 表示目标路径没有 Git Marker，`null` 表示存在 Marker 但无法验证身份。
+可以重复使用 `--exclude-path <仓库内路径>`，精确排除属于 Bootstrap 工具而非目标证据的文件或目录。相对路径从 `--root` 解析，仓库外或不存在的路径会被拒绝，最终排除项会记录在 `scan.excluded_paths`。排除逻辑使用文件系统身份，因此路径的其他大小写写法或文件符号链接不能把已排除证据重新引入。当扫描器自身位于目标仓库内，并且父包的 `SKILL.md` 声明 `name: agentize-skill` 时，它只会自动排除该包作为纵深保护；其他包内复制的扫描器不会触发该行为，其他仓库自有 Skill 仍然可见。
+
+Git 查询会清除继承的 `GIT_*` 仓库选择变量，拒绝实际解析到目标仓库内部的 `git` 可执行文件，并且只检查仓库身份与分支。它不会运行 `status` 或 `diff`，因为内容比较可能执行仓库配置的 Filter。因此 Worktree State 会报告为 `unverified`，绝不会静默当作 Clean。Repository Identity 使用三态：`true` 表示已验证，`false` 表示目标路径及其父级没有 Git Marker，`null` 表示存在 Marker 但无法验证身份。
 
 Agentize Skill 会先尝试 Node.js 扫描器；如果第一套实现不可用、不兼容或无法返回有效报告，再尝试 Python。两者都无法工作时，它会使用宿主已有的只读工具，明确披露扫描器失败，并将无法获得的确定性事实标为 `unverified`。它不会仅为扫描而安装或升级运行时。
 
@@ -144,6 +162,7 @@ Agentize Skill 会先尝试 Node.js 扫描器；如果第一套实现不可用�
 - `references/artifacts.md` 负责自适应 Repository Output 的选择和内容。
 - `references/compatibility.md` 负责多宿主与 Provider-specific 协调。
 - `scripts/scan_repo.py` 和 `scripts/scan_repo.cjs` 实现同一个无第三方依赖的扫描器契约。
+- `docs/workflow.en.png` 和 `docs/workflow.png` 分别展示上文概括的英文与中文理想生命周期。
 - `tests/test_scanners.py` 包含确定性的扫描器安全、边界和跨运行时 parity 回归测试。
 - `tests/test_package_identity.py` 防止仓库名、Skill 名、Selector 和安装路径再次出现漂移。
 - `.github/workflows/ci.yml` 会在推送到 `main` 和 Pull Request 时运行确定性测试、两套扫描器、语法检查与 Skill 包校验。

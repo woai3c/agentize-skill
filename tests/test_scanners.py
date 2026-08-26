@@ -154,6 +154,32 @@ class ScanRepositoryTests(unittest.TestCase):
             "no_declared_verification_command_detected", report["diagnostic_hints"]
         )
 
+    def test_nested_instructions_do_not_masquerade_as_a_root_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "packages/api/AGENTS.md", "# API rules\n")
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertIn(
+                    "no_root_instruction_entrypoint_detected",
+                    report["diagnostic_hints"],
+                )
+                self.assertNotIn(
+                    "provider_specific_root_instructions_only",
+                    report["diagnostic_hints"],
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
     def test_documented_verification_commands_are_detected_but_never_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -268,6 +294,326 @@ class ScanRepositoryTests(unittest.TestCase):
             ["docs/missing.md"],
         )
 
+    def test_ci_inventory_ignores_docs_in_configuration_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            docs_only = base / "docs-only"
+            docs_only.mkdir()
+            write(docs_only, ".github/workflows/README.md", "# Workflows\n")
+            write(docs_only, ".circleci/README.md", "# CircleCI\n")
+            write(docs_only, ".buildkite/README.md", "# Buildkite\n")
+            configured = base / "configured"
+            configured.mkdir()
+            write(configured, ".github/workflows/ci.yaml", "name: CI\n")
+
+            commands = [scan]
+            if NODE_EXECUTABLE is not None:
+                commands.append(scan_with_node)
+            docs_reports = [command(docs_only) for command in commands]
+            configured_reports = [command(configured) for command in commands]
+
+        for report in docs_reports:
+            with self.subTest(
+                fixture="docs-only", implementation=report["scan"]["implementation"]
+            ):
+                self.assertEqual(report["automation"]["ci_files"], [])
+                self.assertIn(
+                    "no_ci_configuration_detected", report["diagnostic_hints"]
+                )
+        for report in configured_reports:
+            with self.subTest(
+                fixture="configured", implementation=report["scan"]["implementation"]
+            ):
+                self.assertEqual(
+                    report["automation"]["ci_files"],
+                    [".github/workflows/ci.yaml"],
+                )
+                self.assertNotIn(
+                    "no_ci_configuration_detected", report["diagnostic_hints"]
+                )
+
+    def test_current_agent_surfaces_and_imports_are_visible(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "AGENTS.md", "# Shared rules\n\n@docs/existing.md\n")
+            write(root, ".kimi/AGENTS.md", "# Kimi project rules\n")
+            write(root, "services/api/agents.md", "# Kimi API rules\n")
+            write(
+                root,
+                "CLAUDE.md",
+                "# Claude rules\n\n"
+                "@docs/existing.md\n"
+                "@docs/missing.md\n"
+                "@../outside.md\n"
+                "`@docs/inline-example.md`\n\n"
+                "```text\n"
+                "@docs/fenced-example.md\n"
+                "```\n",
+            )
+            write(root, "GEMINI.md", "# Gemini rules\n\n@docs/existing.md\n")
+            write(root, "REVIEW.md", "# Claude review guidance\n")
+            write(root, "docs/existing.md", "# Existing\n")
+            write(root, ".claude/rules/backend.md", "# Backend rule\n")
+            write(root, ".cursor/rules/frontend.mdc", "# Frontend rule\n")
+            write(root, "backend/.cursor/rules/api.mdc", "# API rule\n")
+            write(root, ".windsurf/rules/workspace.md", "# Workspace rule\n")
+            write(root, "backend/.windsurf/rules/api.md", "# Scoped rule\n")
+            write(root, ".cursor/BUGBOT.md", "# Root Bugbot guidance\n")
+            write(root, "backend/.cursor/BUGBOT.md", "# API Bugbot guidance\n")
+            write(
+                root,
+                ".github/copilot-instructions.md",
+                "# Copilot rules\n\n@../docs/existing.md\n",
+            )
+            write(root, ".github/instructions/ui.instructions.md", "# UI rule\n")
+            write(root, ".claude/agents/reviewer.md", "# Reviewer\n")
+            write(root, ".gemini/agents/tester.md", "# Tester\n")
+            write(root, ".github/agents/security.md", "# Security\n")
+            write(root, ".claude/commands/check.md", "# Check command\n")
+            write(root, ".gemini/commands/check.toml", 'prompt = "check"\n')
+            write(root, ".github/prompts/check.prompt.md", "# Check prompt\n")
+            write(root, ".cursor/commands/check.md", "# Check command\n")
+            write(root, ".windsurf/workflows/check.md", "# Check workflow\n")
+            write(root, ".windsurf/settings.json", "{}\n")
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        expected_instruction_kinds = {
+            "AGENTS.md": "shared",
+            ".kimi/AGENTS.md": "kimi",
+            "services/api/agents.md": "kimi",
+            "CLAUDE.md": "claude",
+            "GEMINI.md": "gemini",
+            "REVIEW.md": "claude-review",
+            ".claude/rules/backend.md": "claude-rule",
+            ".cursor/BUGBOT.md": "cursor-review",
+            ".cursor/rules/frontend.mdc": "cursor",
+            ".github/copilot-instructions.md": "copilot",
+            ".github/instructions/ui.instructions.md": "copilot-path",
+            ".windsurf/rules/workspace.md": "windsurf-rule",
+            "backend/.cursor/BUGBOT.md": "cursor-review",
+            "backend/.cursor/rules/api.mdc": "cursor",
+            "backend/.windsurf/rules/api.md": "windsurf-rule",
+        }
+        expected_agent_definitions = [
+            {"path": ".claude/agents/reviewer.md", "kind": "claude"},
+            {"path": ".gemini/agents/tester.md", "kind": "gemini"},
+            {"path": ".github/agents/security.md", "kind": "copilot"},
+        ]
+        expected_prompts = [
+            {"path": ".claude/commands/check.md", "kind": "claude"},
+            {"path": ".cursor/commands/check.md", "kind": "cursor"},
+            {"path": ".gemini/commands/check.toml", "kind": "gemini"},
+            {"path": ".github/prompts/check.prompt.md", "kind": "copilot"},
+            {"path": ".windsurf/workflows/check.md", "kind": "windsurf"},
+        ]
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(
+                    {
+                        item["path"]: item["kind"]
+                        for item in report["agent_surface"]["instructions"]
+                    },
+                    expected_instruction_kinds,
+                )
+                self.assertEqual(
+                    report["agent_surface"]["agent_definitions"],
+                    expected_agent_definitions,
+                )
+                self.assertEqual(report["agent_surface"]["prompts"], expected_prompts)
+                self.assertIn(
+                    ".windsurf/settings.json", report["agent_surface"]["config"]
+                )
+                self.assertNotIn(
+                    ".gemini/commands/check.toml",
+                    report["agent_surface"]["config"],
+                )
+                shared = next(
+                    item
+                    for item in report["agent_surface"]["instructions"]
+                    if item["path"] == "AGENTS.md"
+                )
+                copilot = next(
+                    item
+                    for item in report["agent_surface"]["instructions"]
+                    if item["path"] == ".github/copilot-instructions.md"
+                )
+                self.assertEqual(shared["imports"], ["docs/existing.md"])
+                self.assertEqual(copilot["imports"], ["../docs/existing.md"])
+                claude = next(
+                    item
+                    for item in report["agent_surface"]["instructions"]
+                    if item["path"] == "CLAUDE.md"
+                )
+                self.assertEqual(
+                    claude["imports"],
+                    ["../outside.md", "docs/existing.md", "docs/missing.md"],
+                )
+                self.assertEqual(claude["broken_imports"], ["docs/missing.md"])
+                self.assertEqual(claude["imports_outside_repository"], ["../outside.md"])
+                self.assertNotIn("docs/inline-example.md", claude["imports"])
+                self.assertNotIn("docs/fenced-example.md", claude["imports"])
+                self.assertIn(
+                    "broken_imports_in_agent_instructions",
+                    report["diagnostic_hints"],
+                )
+                self.assertIn(
+                    "instruction_imports_outside_repository",
+                    report["diagnostic_hints"],
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_kimi_project_instruction_is_a_root_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, ".kimi/AGENTS.md", "# Kimi project rules\n")
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(
+                    [
+                        (item["path"], item["kind"])
+                        for item in report["agent_surface"]["instructions"]
+                    ],
+                    [(".kimi/AGENTS.md", "kimi")],
+                )
+                self.assertNotIn(
+                    "no_root_instruction_entrypoint_detected",
+                    report["diagnostic_hints"],
+                )
+                self.assertIn(
+                    "provider_specific_root_instructions_only",
+                    report["diagnostic_hints"],
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_markdown_output_encodes_untrusted_control_and_fence_characters(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "docs/architecture`guide.md", "# Architecture\n")
+            write(
+                root,
+                "package.json",
+                json.dumps(
+                    {
+                        "scripts": {
+                            "test:unsafe`\n## injected": (
+                                "node --test\n## injected\x1b[31m"
+                            )
+                        }
+                    }
+                ),
+            )
+
+            markdown_reports = [
+                markdown_with([sys.executable, str(SCANNER)], root)
+            ]
+            if NODE_EXECUTABLE is not None:
+                markdown_reports.append(
+                    markdown_with([NODE_EXECUTABLE, str(NODE_SCANNER)], root)
+                )
+
+        for markdown in markdown_reports:
+            self.assertNotIn("\x1b", markdown)
+            self.assertNotIn("\n## injected", markdown)
+            self.assertIn("\\u000a", markdown)
+            self.assertIn("\\u001b", markdown)
+            self.assertIn("\\u0060", markdown)
+
+        if len(markdown_reports) == 2:
+            self.assertEqual(markdown_reports[0], markdown_reports[1])
+
+    def test_markdown_examples_comments_and_mentions_are_not_import_or_link_evidence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "docs/existing.md", "# Existing\n")
+            write(
+                root,
+                "AGENTS.md",
+                "# Rules\n\n"
+                "Contact @alice and mention @scope/pkg in prose.\n"
+                "Use `@docs/inline.md` as an inline example.\n\n"
+                "```markdown title=\"example\"\n"
+                "[fenced example](docs/fenced-missing.md)\n"
+                "@docs/fenced-missing.md\n"
+                "```\n\n"
+                "<!-- [commented](docs/comment-missing.md) "
+                "@docs/comment-missing.md -->\n"
+                "See [existing](docs/existing.md).\n"
+                "@docs/existing.md\n"
+                "@docs/actual-missing.md\n",
+            )
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                instruction = report["agent_surface"]["instructions"][0]
+                self.assertEqual(
+                    instruction["imports"],
+                    ["docs/actual-missing.md", "docs/existing.md"],
+                )
+                self.assertEqual(
+                    instruction["broken_imports"], ["docs/actual-missing.md"]
+                )
+                self.assertEqual(instruction["broken_relative_links"], [])
+                self.assertNotIn("alice", instruction["imports"])
+                self.assertNotIn("scope/pkg", instruction["imports"])
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_malformed_instruction_paths_do_not_abort_scanning(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            malformed = "docs/\x00bad.md"
+            write(
+                root,
+                "AGENTS.md",
+                f"# Rules\n\n@{malformed}\n[bad]({malformed})\n",
+            )
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                instruction = report["agent_surface"]["instructions"][0]
+                self.assertEqual(instruction["broken_relative_links"], [malformed])
+                self.assertEqual(instruction["broken_imports"], [malformed])
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
     def test_file_limit_is_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -279,6 +625,63 @@ class ScanRepositoryTests(unittest.TestCase):
         self.assertTrue(report["scan"]["truncated"])
         self.assertEqual(report["scan"]["files_seen"], 3)
         self.assertIn("scan_truncated_at_file_limit", report["diagnostic_hints"])
+
+    def test_traversal_limit_reports_incomplete_detection_not_false_absence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, "a.txt", "first\n")
+            write(root, ".github/workflows/ci.yml", "name: CI\n")
+            write(root, "nested/AGENTS.md", "# Rules\n")
+
+            commands = [scan]
+            if NODE_EXECUTABLE is not None:
+                commands.append(scan_with_node)
+            reports = [command(root, "--max-files", "1") for command in commands]
+            markdown_reports = [
+                markdown_with(
+                    [
+                        sys.executable if command is scan else NODE_EXECUTABLE,
+                        str(SCANNER if command is scan else NODE_SCANNER),
+                        "--max-files",
+                        "1",
+                    ],
+                    root,
+                )
+                for command in commands
+            ]
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertTrue(report["scan"]["truncated"])
+                self.assertIn(
+                    "agent_instruction_surface_detection_incomplete",
+                    report["diagnostic_hints"],
+                )
+                self.assertIn(
+                    "declared_verification_command_detection_incomplete",
+                    report["diagnostic_hints"],
+                )
+                self.assertIn(
+                    "ci_configuration_detection_incomplete",
+                    report["diagnostic_hints"],
+                )
+                self.assertNotIn(
+                    "no_agent_instruction_surface_detected",
+                    report["diagnostic_hints"],
+                )
+                self.assertNotIn(
+                    "no_declared_verification_command_detected",
+                    report["diagnostic_hints"],
+                )
+                self.assertNotIn(
+                    "no_ci_configuration_detected", report["diagnostic_hints"]
+                )
+
+        for rendered in markdown_reports:
+            self.assertIn("detection was incomplete", rendered)
+            self.assertIn("unverified (traversal incomplete)", rendered)
 
     def test_exact_file_limit_is_not_reported_as_truncated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -429,6 +832,91 @@ class ScanRepositoryTests(unittest.TestCase):
                     report["diagnostic_hints"],
                 )
 
+    def test_report_caps_are_explicit_and_do_not_corrupt_derived_ecosystems(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index in range(200):
+                write(root, f"crates/crate-{index:03d}/Cargo.toml", "[package]\n")
+            write(
+                root,
+                "z/package.json",
+                '{"scripts":{"test":"node --test"}}\n',
+            )
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertFalse(report["scan"]["truncated"])
+                self.assertTrue(report["scan"]["report_truncated"])
+                self.assertEqual(len(report["project"]["manifests"]), 200)
+                self.assertNotIn("z/package.json", report["project"]["manifests"])
+                self.assertEqual(report["project"]["ecosystems"], ["Node.js", "Rust"])
+                sections = {
+                    item["path"]: item
+                    for item in report["scan"]["report_truncated_sections"]
+                }
+                self.assertEqual(
+                    sections["project.manifests"],
+                    {"path": "project.manifests", "total": 201, "reported": 200},
+                )
+                self.assertIn("report_fields_truncated", report["diagnostic_hints"])
+                self.assertEqual(
+                    report["verification"]["declared_commands"][0]["name"],
+                    "test",
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_inner_command_caps_are_explicit_without_hiding_verification(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            scripts = {f"command-{index:03d}": "node tool.js" for index in range(100)}
+            scripts["zzz-test"] = "node --test"
+            write(root, "package.json", json.dumps({"scripts": scripts}))
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                package = report["verification"]["package_scripts"][0]
+                self.assertEqual(package["scripts_total"], 101)
+                self.assertEqual(len(package["scripts"]), 100)
+                self.assertNotIn("zzz-test", package["scripts"])
+                self.assertIn(
+                    "zzz-test",
+                    {
+                        command["name"]
+                        for command in report["verification"]["declared_commands"]
+                    },
+                )
+                sections = {
+                    item["path"]: item
+                    for item in report["scan"]["report_truncated_sections"]
+                }
+                self.assertEqual(
+                    sections["verification.package_scripts[package.json].scripts"],
+                    {
+                        "path": "verification.package_scripts[package.json].scripts",
+                        "total": 101,
+                        "reported": 100,
+                    },
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
     def test_vendored_directories_are_opt_in(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -441,6 +929,300 @@ class ScanRepositoryTests(unittest.TestCase):
         self.assertEqual(default_report["scan"]["files_seen"], 1)
         self.assertEqual(included_report["scan"]["files_seen"], 2)
         self.assertIn("vendor", default_report["scan"]["skipped_directories"])
+
+    def test_exact_exclusion_removes_only_the_named_bootstrap_tool(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            excluded = root / "agentize-skill"
+            write(root, "AGENTS.md", "# Target guidance\n")
+            write(
+                root,
+                "package.json",
+                json.dumps(
+                    {
+                        "name": "target-project",
+                        "scripts": {"test:unit": "node --test"},
+                    }
+                ),
+            )
+            write(root, "src/index.js", "export const value = 1;\n")
+            write(root, "tests/index.test.js", "// target test\n")
+            write(
+                root,
+                ".agents/skills/project-skill/SKILL.md",
+                "---\nname: project-skill\n---\n",
+            )
+            write(excluded, "AGENTS.md", "# Agentize development guidance\n")
+            write(excluded, "pyproject.toml", "[project]\nname = 'agentize-skill'\n")
+            write(excluded, "tests/test_scanners.py", "def test_scanner(): pass\n")
+
+            reports = [
+                scan(
+                    root,
+                    "--exclude-path",
+                    "agentize-skill",
+                )
+            ]
+            if NODE_EXECUTABLE is not None:
+                reports.append(
+                    scan_with_node(root, "--exclude-path", str(excluded))
+                )
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(report["schema_version"], 7)
+                self.assertEqual(
+                    report["scan"]["excluded_paths"],
+                    ["agentize-skill"],
+                )
+                self.assertNotIn(
+                    "agentize-skill", report["project"]["top_level_entries"]
+                )
+                self.assertEqual(report["project"]["ecosystems"], ["Node.js"])
+                self.assertNotIn(
+                    "Python",
+                    {
+                        language["name"]
+                        for language in report["project"]["languages"]
+                    },
+                )
+                self.assertEqual(
+                    [
+                        instruction["path"]
+                        for instruction in report["agent_surface"]["instructions"]
+                    ],
+                    ["AGENTS.md"],
+                )
+                self.assertEqual(
+                    report["agent_surface"]["skills"],
+                    [".agents/skills/project-skill/SKILL.md"],
+                )
+                self.assertEqual(
+                    report["verification"]["test_paths"],
+                    ["tests/index.test.js"],
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_nested_scanner_automatically_excludes_its_own_skill_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            installed = root / ".agents/skills/agentize-skill"
+            write(root, "AGENTS.md", "# Target guidance\n")
+            write(root, "package.json", '{"scripts":{"test":"node --test"}}\n')
+            write(root, "tests/target.test.js", "// target test\n")
+            write(installed, "SKILL.md", "---\nname: agentize-skill\n---\n")
+            write(installed, "tests/internal_test.py", "def test_internal(): pass\n")
+            python_scanner = installed / "scripts/scan_repo.py"
+            python_scanner.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SCANNER, python_scanner)
+
+            commands = [[sys.executable, str(python_scanner)]]
+            if NODE_EXECUTABLE is not None:
+                node_scanner = installed / "scripts/scan_repo.cjs"
+                shutil.copy2(NODE_SCANNER, node_scanner)
+                commands.append([NODE_EXECUTABLE, str(node_scanner)])
+            reports = []
+            for command in commands:
+                result = subprocess.run(
+                    [*command, "--root", str(root), "--format", "json"],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                reports.append(json.loads(result.stdout))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(
+                    report["scan"]["excluded_paths"],
+                    [".agents/skills/agentize-skill"],
+                )
+                self.assertEqual(
+                    [
+                        item["path"]
+                        for item in report["agent_surface"]["instructions"]
+                    ],
+                    ["AGENTS.md"],
+                )
+                self.assertEqual(report["agent_surface"]["skills"], [])
+                self.assertEqual(
+                    report["verification"]["test_paths"],
+                    ["tests/target.test.js"],
+                )
+                self.assertNotIn(
+                    "Python",
+                    {
+                        language["name"]
+                        for language in report["project"]["languages"]
+                    },
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_nested_scanner_does_not_auto_exclude_unidentified_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            installed = root / ".agents/skills/copied-tool"
+            write(root, "package.json", '{"scripts":{"test":"node --test"}}\n')
+            write(installed, "SKILL.md", "---\nname: copied-tool\n---\n")
+            write(installed, "tests/internal_test.py", "def test_internal(): pass\n")
+            python_scanner = installed / "scripts/scan_repo.py"
+            python_scanner.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SCANNER, python_scanner)
+
+            commands = [[sys.executable, str(python_scanner)]]
+            if NODE_EXECUTABLE is not None:
+                node_scanner = installed / "scripts/scan_repo.cjs"
+                shutil.copy2(NODE_SCANNER, node_scanner)
+                commands.append([NODE_EXECUTABLE, str(node_scanner)])
+            reports = []
+            for command in commands:
+                result = subprocess.run(
+                    [*command, "--root", str(root), "--format", "json"],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                reports.append(json.loads(result.stdout))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(report["scan"]["excluded_paths"], [])
+                self.assertEqual(
+                    report["agent_surface"]["skills"],
+                    [".agents/skills/copied-tool/SKILL.md"],
+                )
+                self.assertIn(
+                    ".agents/skills/copied-tool/tests/internal_test.py",
+                    report["verification"]["test_paths"],
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_excluded_directory_cannot_reenter_through_file_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            excluded_manifest = write(
+                root,
+                "bootstrap/package.json",
+                '{"scripts":{"test":"node --test"}}\n',
+            )
+            alias = root / "alias/package.json"
+            alias.parent.mkdir()
+            try:
+                alias.symlink_to(excluded_manifest)
+            except OSError as error:
+                self.skipTest(f"file symlinks unavailable: {error}")
+
+            reports = [scan(root, "--exclude-path", "bootstrap")]
+            if NODE_EXECUTABLE is not None:
+                reports.append(
+                    scan_with_node(root, "--exclude-path", "bootstrap")
+                )
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(report["project"]["manifests"], [])
+                self.assertEqual(report["project"]["ecosystems"], [])
+                self.assertIn("alias/package.json", report["scan"]["skipped_symlinks"])
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_exclusion_matches_filesystem_identity_on_case_insensitive_hosts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            actual = root / "Bootstrap"
+            write(actual, "package.json", '{}\n')
+            differently_cased = root / "bootstrap"
+            try:
+                same_identity = differently_cased.exists() and os.path.samefile(
+                    actual, differently_cased
+                )
+            except OSError:
+                same_identity = False
+            if not same_identity:
+                self.skipTest("fixture requires a case-insensitive filesystem")
+
+            reports = [scan(root, "--exclude-path", "bootstrap")]
+            if NODE_EXECUTABLE is not None:
+                reports.append(
+                    scan_with_node(root, "--exclude-path", "bootstrap")
+                )
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(report["project"]["manifests"], [])
+                self.assertNotIn("Bootstrap", report["project"]["top_level_entries"])
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    def test_exclusion_outside_the_target_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "repository"
+            outside = base / "outside"
+            root.mkdir()
+            outside.mkdir()
+            commands = [[sys.executable, str(SCANNER)]]
+            if NODE_EXECUTABLE is not None:
+                commands.append([NODE_EXECUTABLE, str(NODE_SCANNER)])
+
+            results = [
+                subprocess.run(
+                    [
+                        *command,
+                        "--root",
+                        str(root),
+                        "--format",
+                        "json",
+                        "--exclude-path",
+                        str(outside),
+                    ],
+                    cwd=REPOSITORY_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                    timeout=10,
+                )
+                for command in commands
+            ]
+
+        for result in results:
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("outside the repository root", result.stderr)
 
     def test_external_file_symlink_is_not_read(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -465,7 +1247,7 @@ class ScanRepositoryTests(unittest.TestCase):
 
             report = scan(root)
 
-        self.assertEqual(report["schema_version"], 5)
+        self.assertEqual(report["schema_version"], 7)
         self.assertEqual(report["project"]["manifests"], [])
         self.assertEqual(report["verification"]["declared_commands"], [])
         self.assertIn("package.json", report["scan"]["skipped_symlinks"])
@@ -492,6 +1274,36 @@ class ScanRepositoryTests(unittest.TestCase):
                     report["verification"]["package_scripts"][0]["package_manager"]
                 )
                 self.assertIn("pnpm-lock.yaml", report["scan"]["skipped_symlinks"])
+
+    def test_internal_file_symlink_cannot_reenter_ignored_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ignored_manifest = write(
+                root,
+                "node_modules/tool/package.json",
+                '{"scripts":{"test":"node --test"}}\n',
+            )
+            try:
+                (root / "package.json").symlink_to(ignored_manifest)
+            except OSError as error:
+                self.skipTest(f"file symlinks unavailable: {error}")
+
+            reports = [scan(root)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(root))
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertEqual(report["project"]["manifests"], [])
+                self.assertEqual(report["project"]["ecosystems"], [])
+                self.assertIn("node_modules", report["scan"]["skipped_directories"])
+                self.assertIn("package.json", report["scan"]["skipped_symlinks"])
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
 
     def test_internal_directory_symlinks_are_skipped_consistently(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -572,6 +1384,78 @@ class ScanRepositoryTests(unittest.TestCase):
                     "Unable to parse package.json: invalid JSON",
                     report["scan"]["warnings"],
                 )
+                self.assertIn(
+                    "declared_verification_command_detection_incomplete",
+                    report["diagnostic_hints"],
+                )
+                self.assertNotIn(
+                    "no_declared_verification_command_detected",
+                    report["diagnostic_hints"],
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions are required")
+    def test_unreadable_directory_makes_absence_detection_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            restricted = root / "restricted"
+            write(restricted, "AGENTS.md", "# Hidden by permissions\n")
+            write(restricted, "package.json", '{"scripts":{"test":"node --test"}}\n')
+            write(restricted, ".github/workflows/ci.yml", "name: CI\n")
+            restricted.chmod(0)
+            try:
+                reports = [scan(root)]
+                markdown_reports = [
+                    markdown_with([sys.executable, str(SCANNER)], root)
+                ]
+                if NODE_EXECUTABLE is not None:
+                    reports.append(scan_with_node(root))
+                    markdown_reports.append(
+                        markdown_with([NODE_EXECUTABLE, str(NODE_SCANNER)], root)
+                    )
+            finally:
+                restricted.chmod(0o700)
+
+        if not reports[0]["scan"]["warnings"]:
+            self.skipTest("The current user can read mode-000 directories")
+
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertTrue(report["scan"]["traversal_incomplete"])
+                self.assertIn(
+                    "repository_inventory_incomplete", report["diagnostic_hints"]
+                )
+                self.assertNotIn("empty_repository", report["diagnostic_hints"])
+                self.assertIn(
+                    "agent_instruction_surface_detection_incomplete",
+                    report["diagnostic_hints"],
+                )
+                self.assertIn(
+                    "declared_verification_command_detection_incomplete",
+                    report["diagnostic_hints"],
+                )
+                self.assertIn(
+                    "ci_configuration_detection_incomplete",
+                    report["diagnostic_hints"],
+                )
+
+        for markdown in markdown_reports:
+            self.assertIn("Traversal incomplete: True", markdown)
+            self.assertIn("detection was incomplete", markdown)
+            self.assertIn(
+                "Declared verification-command detection is incomplete", markdown
+            )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
 
     def test_taskfile_targets_use_the_task_runner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -599,6 +1483,7 @@ class ScanRepositoryTests(unittest.TestCase):
                 "source": "Taskfile.yml",
                 "runner": "task",
                 "targets": ["lint", "test"],
+                "targets_total": 2,
             }
         ]
         for report in reports:
@@ -702,6 +1587,52 @@ class ScanRepositoryTests(unittest.TestCase):
                 executed.append((implementation, marker.exists()))
 
         self.assertEqual(executed, [(name, False) for name, _ in executed])
+
+    @unittest.skipIf(os.name == "nt", "POSIX executable fixture is required")
+    def test_git_inventory_rejects_an_executable_inside_the_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repository"
+            repository.mkdir()
+            (repository / ".git").mkdir()
+            marker = repository / "fake-git-executed"
+            fake_git = write(
+                repository,
+                "git",
+                "#!/bin/sh\n"
+                f"printf executed > {shlex.quote(str(marker))}\n"
+                "exit 0\n",
+            )
+            fake_git.chmod(0o755)
+            environment = os.environ.copy()
+            environment["PATH"] = (
+                str(repository)
+                + os.pathsep
+                + environment.get("PATH", "")
+            )
+
+            reports = [scan(repository, environment=environment)]
+            if NODE_EXECUTABLE is not None:
+                reports.append(scan_with_node(repository, environment=environment))
+            marker_executed = marker.exists()
+
+        self.assertFalse(marker_executed)
+        for report in reports:
+            with self.subTest(implementation=report["scan"]["implementation"]):
+                self.assertIsNone(report["version_control"]["is_repository"])
+                self.assertEqual(
+                    report["version_control"]["repository_state_reason"],
+                    "git_executable_inside_target",
+                )
+                self.assertIn(
+                    "git_repository_identity_unverified",
+                    report["diagnostic_hints"],
+                )
+
+        if len(reports) == 2:
+            self.assertEqual(
+                normalized_runtime_report(reports[0]),
+                normalized_runtime_report(reports[1]),
+            )
 
     @unittest.skipUnless(
         GIT_EXECUTABLE is not None and os.name != "nt",
@@ -866,7 +1797,7 @@ class ScanRepositoryTests(unittest.TestCase):
         for report in reports:
             with self.subTest(implementation=report["scan"]["implementation"]):
                 metadata = report["version_control"]
-                self.assertEqual(report["schema_version"], 5)
+                self.assertEqual(report["schema_version"], 7)
                 self.assertIsNone(metadata["is_repository"])
                 self.assertEqual(metadata["repository_state"], "unverified")
                 self.assertEqual(
@@ -899,7 +1830,7 @@ class ScanRepositoryTests(unittest.TestCase):
         for report in reports:
             with self.subTest(implementation=report["scan"]["implementation"]):
                 metadata = report["version_control"]
-                self.assertEqual(report["schema_version"], 5)
+                self.assertEqual(report["schema_version"], 7)
                 self.assertIsNone(metadata["is_repository"])
                 self.assertEqual(metadata["repository_state"], "unverified")
                 self.assertEqual(

@@ -34,6 +34,20 @@ class PackageIdentityTests(unittest.TestCase):
                 self.assertIn(f"${MACHINE_NAME}", readme)
                 self.assertIsNone(re.search(r"\$agentize(?!-skill)", readme))
 
+    def test_evidence_layer_taxonomy_stays_complete(self) -> None:
+        skill = (REPOSITORY_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        assessment = (REPOSITORY_ROOT / "references" / "assessment.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Keep five layers separate", skill)
+        self.assertRegex(
+            assessment,
+            r"artifact delivery and\s+platform activation, and current-task "
+            r"execution outcome are five different\s+things",
+        )
+        self.assertNotIn("are four different things", assessment)
+
 
 if __name__ == "__main__":
     unittest.main()

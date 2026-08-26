@@ -16,7 +16,7 @@ scope -> inventory -> assess -> install or repair -> verify -> handoff -> exit
 The ideal repository workflow is:
 
 ```text
-Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification <-> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> AI Review + MR/PR CI -> Merge
+Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification -> Independent Reviewer Agent -> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> Platform AI Review + MR/PR CI -> Merge
 ```
 
 Continuous Knowledge Capture spans Specify through Merge. Shipping and
@@ -27,16 +27,18 @@ than fixed in this line: it may run per MR/PR, at a test/staging promotion
 boundary, on a schedule, before release, or in a documented combination.
 
 The bidirectional arrows are real correction loops. Plan feedback can require
-more exploration; local verification or Human Local Acceptance failures return
-to implementation; review or CI failures return through local implementation and
-verification before the MR/PR and its gates are updated. Agentize Skill installs or
-repairs the durable paths for those transitions and is not invoked by them.
+more exploration; local verification, applicable independent review, or Human Local
+Acceptance failures return through the applicable planning, implementation,
+verification, and review stages; platform review or CI failures return through
+local implementation, verification, and applicable independent review before the
+MR/PR and its gates are updated. Agentize Skill installs or repairs the durable
+paths for those transitions and is not invoked by them.
 
 This line is an ideal target, not a capability claim. Not every repository has
-MR/PR, CI, an exercisable runtime, browser control, E2E infrastructure, preview
-or staging, deployment, observation, or an automated Agent runner. For every
-material stage, distinguish the ideal contract, the repository's evidence state,
-the operational status defined in
+MR/PR, CI, an exercisable runtime, browser control, a fresh-context Reviewer
+Agent, platform AI review, E2E infrastructure, preview or staging, deployment,
+observation, or an automated Agent runner. For every material stage, distinguish
+the ideal contract, the repository's evidence state, the operational status defined in
 [assessment.md](assessment.md#operational-capability-status), and the outcome of
 the current task. Never represent instructions or a generated file as active
 automation.
@@ -61,6 +63,13 @@ The fast path may keep the plan inline and use existing policy as pre-approval.
 It does not skip relevant exploration, verification, truthful handoff, or Human
 Acceptance when the outcome still requires human judgment. If classification is
 uncertain, use the full path. Do not impose a universal numeric risk score.
+
+Independent pre-acceptance review is the normal full-path default when a suitable
+Reviewer Agent capability is `READY`, and repository policy may require it for
+named risk surfaces. A fast-path change may omit it when established policy says
+self-review and deterministic checks are proportionate. Missing review capability
+must remain visible with its consequence and fallback; do not fabricate a second
+Agent or make every typo wait for unavailable infrastructure.
 
 ## 1. Specify
 
@@ -212,13 +221,75 @@ Local Fast Verification, then rerun every applicable targeted runtime flow. Agen
 Verification answers whether the implementation satisfies the available checks;
 it does not decide whether the requested outcome is the right one.
 
-## 6. Human Local Acceptance
+## 6. Independent pre-acceptance technical review
 
-After applicable local Agent verification passes, the responsible human decides:
-**is this actually what we wanted?** Evaluate the real goal, Acceptance Criteria,
-business behavior, UI/UX where relevant, hidden rules, and possible requirement
-misunderstanding. Agent evidence should make the decision efficient, but the Agent
-must not accept its own interpretation.
+After applicable Local Fast and Targeted Runtime Verification outcomes are
+accounted for, including explicit missing evidence and fallbacks, use a separate
+Reviewer Agent for non-trivial work when that capability is available. Treat it
+as required for any risk surface that repository policy explicitly assigns to
+independent Agent review. The reviewer asks whether the candidate is technically
+sound and actively looks for reasons it should not proceed. It checks requirement
+conformance, correctness, architecture, maintainability, security, performance
+where relevant, tests, edge cases, error handling, concurrency, hidden
+assumptions, and regression risk. It does not decide product acceptance.
+
+The implementing Agent's self-review remains useful but is not independent. For
+this workflow, independence means a separate review role and bounded context with
+no implementation ownership for the reviewed candidate; it does not mean the
+models' errors are statistically independent. A fresh session or subagent using
+the same model can provide separate-context review, but it is not model diversity.
+A child that inherits the full implementation conversation and its conclusions
+has weaker separation and must not be described as fresh-context review. Different
+models or multiple specialist reviewers are optional investments for risk that
+justifies their cost, not the default for every change.
+
+Give the Reviewer Agent the smallest authoritative review packet:
+
+- goal, requirements, Acceptance Criteria, accepted plan, and material decisions;
+- applicable Agent instructions and maintained product, architecture, security,
+  or verification context;
+- the exact commit or disclosed worktree change, diff, changed files, and enough
+  surrounding code and tests to understand impact;
+- Local Fast and Targeted Runtime evidence, exclusions, unresolved questions,
+  and known risk surfaces.
+
+Do not replace this packet with the implementer's full conversation, narrative,
+or prior verdict. The reviewer does not edit or repair the candidate by default.
+It may inspect and, when authorized, run relevant verification, while reporting
+any artifacts or side effects separately. Each actionable finding should name
+severity or consequence, direct evidence and location, the violated requirement
+or risk, and the verification needed after repair. Record the reviewed revision,
+reviewer host and context relationship, review scope, unavailable evidence, and
+whether the result was self-review, separate-context review, model-diverse review,
+or a platform review. “No findings” is bounded technical evidence, not proof of
+correct intent.
+
+An operational Reviewer Agent path needs a real fresh-session, delegation, or
+review automation surface; access to the authoritative review packet and exact
+candidate; sufficient read and tool permissions; a bounded cost and timeout;
+clear failure behavior; and a route that returns findings to the implementing
+Agent. Instructions alone do not make it `READY`. When no independent path exists,
+report `NOT CONFIGURED`, `SETUP REQUIRED`, or `UNVERIFIED` as appropriate. Use
+implementer self-review explicitly labeled non-independent as the minimum
+fallback, and route high-consequence work to an authorized Human Technical Review
+when repository policy permits or requires it. If policy requires independent
+Agent review and defines no authorized fallback, the change cannot advance until
+that capability is available or the responsible policy owner grants an exception.
+
+Every actionable finding returns to the implementing Agent, then through Local
+Fast Verification, applicable Targeted Runtime Verification, and independent
+review of the resulting candidate. A requirement or accepted-plan defect returns
+to the responsible Human Plan Review rather than being silently “fixed” as code.
+Review evidence is revision-specific; later edits do not inherit a prior pass.
+
+## 7. Human Local Acceptance
+
+After applicable local Agent verification and independent technical review are
+accounted for, the responsible human decides: **is this actually what we wanted?**
+Evaluate the real goal, Acceptance Criteria, business behavior, UI/UX where
+relevant, hidden rules, and possible requirement misunderstanding. Agent and
+reviewer evidence should make the decision efficient, but neither Agent may
+accept its own interpretation.
 
 If a runtime capability was not executable, expose the missing evidence and named
 manual fallback before asking for acceptance. Manual exercise may supply human
@@ -233,18 +304,22 @@ alone do not prove a person will be available or that a decision occurred. If no
 required route exists, record the capability gap and blocker instead of assuming
 silence means acceptance.
 
-If Human Local Acceptance fails, preserve the concrete feedback and return through
-implementation, Local Fast Verification, applicable Targeted Runtime Verification,
-and Human Local Acceptance. Passing tests or runtime checks cannot turn an
-incorrect initial interpretation into an accepted product outcome.
+If Human Local Acceptance fails, preserve the concrete feedback. A changed goal,
+Acceptance Criterion, or material design decision returns to Specify or Plan and
+Human Plan Review. An implementation defect returns through implementation,
+Local Fast Verification, applicable Targeted Runtime Verification, applicable
+independent review, and Human Local Acceptance. Passing tests, runtime checks, or
+technical review cannot turn an incorrect initial interpretation into an accepted
+product outcome.
 
-## 7. Draft and Ready MR/PR, independent AI review, and MR/PR CI
+## 8. Draft and Ready MR/PR, platform AI review, and MR/PR CI
 
 A Draft MR/PR may be created earlier for work in progress, early CI, a preview
 environment, or collaboration when the user and platform authorize it. Draft
 existence is not a quality or acceptance claim. The shared gate is **Create or
 Mark MR/PR Ready for Review**, which normally occurs only after applicable local
-Agent Verification passes and Human Local Acceptance is recorded.
+Agent Verification, required independent pre-acceptance review, and Human Local
+Acceptance are accounted for.
 
 The ready MR/PR or equivalent handoff should make these items discoverable without
 replaying the chat:
@@ -253,6 +328,8 @@ replaying the chat:
 - material deviations and unresolved questions;
 - change summary and risk-sensitive areas;
 - Local Fast and Targeted Runtime evidence, provenance, and exclusions;
+- independent pre-acceptance review scope, findings, disposition, provenance,
+  and any explicit fallback;
 - the Human Local Acceptance decision and any conditional preview or staging
   acceptance still required.
 
@@ -261,15 +338,20 @@ the host and user. For projects without MR/PR, use the closest reviewable change
 and handoff path; do not create provider configuration or claim branch protection
 merely to make the diagram complete.
 
-Prefer an independent Reviewer Agent when its runner, trigger, diff and context
-access, permissions, and failure behavior are configured and verified. The
-implementing Agent's self-review is useful but is not independent. The reviewer
-checks correctness, architecture, maintainability, security, performance where
-relevant, tests, edge cases, hidden assumptions, error handling, and regressions.
-AI review asks whether the implementation is technically sound; it does not
-replace Human Acceptance because a different model or session produced it.
+Platform AI review is a separate, capability-dependent MR/PR gate. It requires a
+real platform trigger and Agent runner, exact remote revision and diff access,
+project-selected model integration, scoped permissions, trusted handling of
+untrusted contribution text, bounded cost, and explicit failure behavior. It may
+add useful remote or organization-level evidence, but a workflow file or bot
+configuration alone is not an active reviewer. Do not confuse it with the local
+fresh-context review above.
 
-AI review and MR/PR CI may run in parallel when the platform supports both.
+Avoid ceremonial duplicate review. One Reviewer Agent result may satisfy both
+pre-acceptance and MR/PR technical-review scopes only when repository policy
+accepts its provenance and it is bound to the exact remote revision or a proven
+identical candidate; record the shared scope once. When platform policy defines a
+separate required gate, run it even if local review passed. Platform AI review and
+MR/PR CI may run in parallel when the platform supports both.
 MR/PR CI contains the repository's applicable per-change gates: Unit,
 Integration, build, typecheck/Lint, security, architecture, and other repository
 policy checks. It includes targeted or full E2E only when the E2E placement policy
@@ -341,15 +423,17 @@ machine-readable inventory or generated gate graph and link other surfaces to it
 Do not introduce that abstraction when the existing gate ownership is already
 clear and reliable.
 
-Every failure or actionable AI-review finding returns to local implementation,
-Local Fast Verification, and applicable Targeted Runtime Verification. Then update
-the MR/PR and rerun AI Review plus the complete applicable MR/PR CI gate set; a fix
-cannot bypass them. Re-run E2E at this point only when its placement policy assigns
-it to the change or the repair addresses an E2E failure. If the fix materially
-changes the behavior that the human accepted, obtain Human Acceptance again before
-merge. Preserve finding provenance rather than flattening implementing-Agent
-checks, independent review, CI, policy gates, and human decisions into one
-`verified` flag.
+Every failure or actionable platform-review finding returns to local
+implementation, Local Fast Verification, applicable Targeted Runtime Verification,
+and applicable independent pre-acceptance review. Then update the MR/PR and rerun
+Platform AI Review plus the complete applicable MR/PR CI gate set; a fix cannot
+bypass them.
+Re-run E2E at this point only when its placement policy assigns it to the change
+or the repair addresses an E2E failure. If the fix materially changes the behavior
+that the human accepted, obtain Human Acceptance again before merge. Preserve
+finding provenance rather than flattening implementing-Agent checks,
+separate-context review, platform review, CI, policy gates, and human decisions
+into one `verified` flag.
 
 Add Human Preview or Staging Acceptance only when environment differences,
 production-like integrations, or task risk make local evidence insufficient, for
@@ -358,16 +442,16 @@ second identical human ceremony for ordinary work. A failed conditional
 preview/staging gate enters the same local modify, verify, update, and complete
 MR/PR-gate loop.
 
-Do not assume every platform has an independent Agent reviewer, full E2E, preview
-environment, or CI runner. Record each capability separately as `READY`, `PARTIAL`,
-`SETUP REQUIRED`, `NOT CONFIGURED`, `UNVERIFIED`, or `NOT APPLICABLE`. Retain
-working gates and use an explicit fallback rather than calling partial CI "all
-gates passed." Payments, authentication, authorization, security, financial
+Do not assume every host has a fresh-context Reviewer Agent or every platform has
+AI review, full E2E, preview, or CI. Record each capability separately as `READY`,
+`PARTIAL`, `SETUP REQUIRED`, `NOT CONFIGURED`, `UNVERIFIED`, or `NOT APPLICABLE`.
+Retain working gates and use an explicit fallback rather than calling partial CI
+"all gates passed." Payments, authentication, authorization, security, financial
 calculations, destructive data changes, database migrations, production
 infrastructure, and ambiguous critical business logic commonly need an authorized
 technical owner, subject to the repository's actual policy.
 
-## 8. Merge, ship, and observe
+## 9. Merge, ship, and observe
 
 Merge occurs only after every applicable MR/PR gate and any conditional
 preview/staging acceptance are accounted for and passed or resolved by an
@@ -382,12 +466,13 @@ If dispatch started but no authoritative result was recorded, retry only a
 read-only or demonstrably idempotent operation. Otherwise inspect real state or
 ask the responsible person before retrying or compensating.
 
-## 9. Continuous Knowledge Capture
+## 10. Continuous Knowledge Capture
 
 Knowledge capture runs throughout the task and is the primary learning path.
 Whenever planning, requirement clarification, Human feedback, implementation,
-debugging, Targeted Runtime Verification, tests, AI or Human review, or CI reveals
-a possible long-term rule, evaluate it before the implementation MR/PR merges:
+debugging, Targeted Runtime Verification, tests, independent or platform AI
+review, Human review, or CI reveals a possible long-term rule, evaluate it before
+the implementation MR/PR merges:
 
 - **Durable:** likely to remain true beyond this implementation;
 - **Non-obvious:** not reliably recoverable from nearby code alone;
@@ -403,6 +488,13 @@ Do not wait until merge to capture knowledge that is already confirmed, and do
 not turn every implementation detail into documentation. Function names, one-off
 CSS changes, raw Agent reflections, and unconfirmed preferences are not durable
 knowledge.
+
+Knowledge capture is not append-only. When direct evidence shows an owned rule,
+document, example, or executable constraint is stale, revise or remove it in the
+same reviewable change and update affected links or checks. Add a scheduled
+knowledge audit only when recurring drift, an owner, and a proportionate
+verification path justify the maintenance cost; do not create periodic churn by
+default.
 
 ### Knowledge provenance and routing
 
@@ -442,7 +534,7 @@ knowledge MR/PR is the decision surface; an authorized approval must confirm bot
 the fact and whether it deserves long-term ownership. The automation must not infer
 that decision from thread state or merge alone.
 
-## 10. Optional Post-Merge Knowledge Audit
+## 11. Optional Post-Merge Knowledge Audit
 
 The post-merge audit is an optional fallback for late evidence, not the primary
 knowledge capture mechanism and not a full re-summarization of the change. It
@@ -492,7 +584,7 @@ not make the automatic capability ready.
 | Intent and acceptance | Structure, challenge, find gaps, and propose evidence. | Confirm material business meaning and desired outcome. |
 | Plan | Explore and propose approach, risks, and verification. | Accept consequential direction or request replanning. |
 | Implementation | Change, debug, verify, and report. | Authorize additional destructive, external, or irreversible scope. |
-| Technical quality | Self-review, independent AI review where available, and CI evidence. | Risk-based technical review where policy or consequence requires it. |
+| Technical quality | Self-review, independent pre-acceptance review where available, platform AI review where configured, and CI evidence. | Risk-based Human Technical Review where policy or consequence requires it. |
 | Product result | Demonstrate the outcome and remaining uncertainty. | Accept locally when acceptance is not already policy-authorized; repeat in preview or staging only when environment or risk requires it. |
 | Merge or release | Prepare the change and evidence. | Grant required merge, release, migration, or production authority. |
 | Durable learning | Capture confirmed knowledge continuously and audit late evidence when configured. | Confirm semantic truth and whether it deserves long-term ownership. |
@@ -505,6 +597,10 @@ verification is reliable, and the repository has a safe answer for worktrees,
 generated files, ports, databases, caches, credentials, and integration
 ownership. More agents must not compensate for unclear intent, weak checks, or
 missing Human Acceptance.
+
+A single Reviewer Agent is a quality-separation role, not permission to introduce
+general multi-agent parallelism. It still needs bounded context, permissions,
+cost, result provenance, and one implementing owner for any repair.
 
 ## Completion condition
 

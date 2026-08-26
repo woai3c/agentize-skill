@@ -9,11 +9,21 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 7;
 const DEFAULT_MAX_FILES = 50000;
 const DEFAULT_MAX_DIRECTORIES = 50000;
 const DEFAULT_MAX_DEPTH = 64;
 const MAX_REPORTED_PATHS = 200;
+const MAX_REPORTED_WARNINGS = 100;
+const MAX_PARSED_MANIFESTS = 50;
+const MAX_DECLARED_COMMANDS = 250;
+const MAX_REPORTED_LANGUAGES = 20;
+const MAX_INSTRUCTION_HEADINGS = 50;
+const MAX_INSTRUCTION_REFERENCES = 100;
+const MAX_INSTRUCTION_LINK_RESULTS = 20;
+const MAX_DOCUMENTED_COMMANDS_PER_INSTRUCTION = 50;
+const MAX_MANIFEST_COMMANDS = 100;
+const MAX_TASK_TARGETS = 200;
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -47,6 +57,7 @@ const INSTRUCTION_FILES = new Map([
   ['CLAUDE.md', 'claude'],
   ['CLAUDE.local.md', 'claude'],
   ['GEMINI.md', 'gemini'],
+  ['REVIEW.md', 'claude-review'],
   ['.cursorrules', 'cursor'],
   ['.windsurfrules', 'windsurf'],
   ['copilot-instructions.md', 'copilot'],
@@ -204,7 +215,7 @@ const VERIFICATION_COMMAND =
   /(?:\b(?:ava|ctest|e2e|eslint|jest|mocha|mypy|prettier|pytest|ruff|shellcheck|tsc|unittest|vitest)\b|\bnode\s+--(?:check|test)\b|\bgit\s+diff\s+--check\b|(?:^|[^A-Za-z0-9-])(?:build|check|compile|fmt|format|lint|smoke|test|tests|typecheck|type-check|validate|verify)(?:$|[^A-Za-z0-9]))/i;
 const COMMAND_START =
   /^(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S+))\s+)*(?:env\s+)?(?:\.{0,2}[/\\][^\s]+|bash|bazel|buck2?|bun|bundle|cargo|cmake|cmd|composer|deno|docker|dotnet|eslint|git|go|gradle|java|just|make|maven|mise|mix|mvnw?|node|nox|npm|npx|nx|php|pnpm|poetry|powershell|prettier|pwsh|py|pytest|python(?:3(?:\.\d+)?)?|rake|ruby|ruff|shellcheck|sh|swift|task|tox|tsc|turbo|uv|vitest|xcodebuild|yarn|zsh)(?:\s|$)/i;
-const FENCE = /^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_-]*)\s*$/;
+const FENCE = /^\s*(`{3,}|~{3,})(.*?)[ \t]*$/;
 const COMMAND_FENCE_LANGUAGES = new Set([
   '',
   'bash',
@@ -220,6 +231,8 @@ const COMMAND_FENCE_LANGUAGES = new Set([
   'zsh',
 ]);
 const MARKDOWN_LINK = /(?<!!)\[[^\]]+\]\(([^)]+)\)/g;
+const INSTRUCTION_IMPORT =
+  /(?<![A-Za-z0-9_])@((?:~[/\\]|\.{0,2}[/\\]|[/\\])?[^\s`"'<>]+)/g;
 const HEADING = /^(#{1,6})\s+(.+?)\s*$/;
 const MAKE_TARGET = /^([A-Za-z0-9_.-]+)\s*:(?![=])/;
 const JUST_TARGET = /^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+[^:=]+)?\s*:(?![=])/;
@@ -263,8 +276,68 @@ function redactSensitiveText(value) {
     .replace(BEARER_CREDENTIAL, '$1 <redacted>');
 }
 
+function markdownProseLines(text) {
+  const prose = [];
+  let fenceCharacter = null;
+  let fenceLength = 0;
+  let inHtmlComment = false;
+
+  for (const rawLine of splitLines(text)) {
+    const stripped = rawLine.trim();
+    if (fenceCharacter !== null) {
+      const closingPrefix = fenceCharacter.repeat(fenceLength);
+      if (
+        stripped.startsWith(closingPrefix) &&
+        Array.from(stripped).every(
+          (character) => character === fenceCharacter,
+        )
+      ) {
+        fenceCharacter = null;
+        fenceLength = 0;
+      }
+      prose.push('');
+      continue;
+    }
+
+    const pieces = [];
+    let cursor = 0;
+    while (cursor < rawLine.length) {
+      if (inHtmlComment) {
+        const end = rawLine.indexOf('-->', cursor);
+        if (end < 0) {
+          cursor = rawLine.length;
+          break;
+        }
+        cursor = end + 3;
+        inHtmlComment = false;
+        continue;
+      }
+      const start = rawLine.indexOf('<!--', cursor);
+      if (start < 0) {
+        pieces.push(rawLine.slice(cursor));
+        break;
+      }
+      pieces.push(rawLine.slice(cursor, start));
+      cursor = start + 4;
+      inHtmlComment = true;
+    }
+
+    const line = pieces.join('');
+    const fence = FENCE.exec(line);
+    if (fence) {
+      fenceCharacter = fence[1][0];
+      fenceLength = fence[1].length;
+      prose.push('');
+      continue;
+    }
+    prose.push(line.replace(/`+[^`]*`+/g, ''));
+  }
+  return prose;
+}
+
 function documentedVerificationCommands(value) {
   const commands = [];
+  const allCommands = [];
   let fenceCharacter = null;
   let fenceLength = 0;
   let inspectFence = false;
@@ -285,7 +358,9 @@ function documentedVerificationCommands(value) {
       }
       fenceCharacter = match[1][0];
       fenceLength = match[1].length;
-      inspectFence = COMMAND_FENCE_LANGUAGES.has(match[2].toLowerCase());
+      const info = (match[2] || '').trim();
+      const language = (info.split(/\s+/, 1)[0] || '').replace(/^[{.]+|[}]+$/g, '');
+      inspectFence = COMMAND_FENCE_LANGUAGES.has(language.toLowerCase());
       continue;
     }
 
@@ -301,7 +376,7 @@ function documentedVerificationCommands(value) {
       pendingLine = 0;
       continue;
     }
-    if (!inspectFence || commands.length >= 50) {
+    if (!inspectFence) {
       continue;
     }
 
@@ -345,21 +420,21 @@ function documentedVerificationCommands(value) {
     ) {
       continue;
     }
-    commands.push({
+    const command = {
       line: commandLine,
       definition: redactSensitiveText(candidate),
-    });
+    };
+    if (commands.length < MAX_DOCUMENTED_COMMANDS_PER_INSTRUCTION) {
+      commands.push(command);
+    }
+    allCommands.push(command);
   }
-  return commands;
+  return { reported: commands, all: allCommands };
 }
 
 function sortedUnique(values, limit = undefined) {
   const sorted = Array.from(new Set(values)).sort(rawCompare);
   return limit === undefined ? sorted : sorted.slice(0, limit);
-}
-
-function capped(values, limit = MAX_REPORTED_PATHS) {
-  return sortedUnique(values, limit);
 }
 
 function relativePath(target, root) {
@@ -407,6 +482,123 @@ function resolveWithExistingAncestors(target) {
   }
 }
 
+function canonicalPathKey(target) {
+  return process.platform === 'win32' ? target.toLowerCase() : target;
+}
+
+function pathIdentity(target) {
+  try {
+    const metadata = fs.statSync(target, { bigint: true });
+    return metadata.dev.toString() + ':' + metadata.ino.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isSameOrDescendantExisting(candidate, ancestor) {
+  const ancestorIdentity = pathIdentity(ancestor);
+  if (ancestorIdentity === null) {
+    return false;
+  }
+  let current = candidate;
+  while (true) {
+    if (pathIdentity(current) === ancestorIdentity) {
+      return true;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return false;
+    }
+    current = parent;
+  }
+}
+
+function normalizeExcludedPaths(root, values) {
+  const candidates = new Map();
+  for (const value of values) {
+    const expanded = expandUser(value);
+    const candidate = path.isAbsolute(expanded)
+      ? expanded
+      : path.join(root, expanded);
+    let resolved;
+    try {
+      resolved = fs.realpathSync(candidate);
+    } catch (error) {
+      throw new Error('Excluded path does not exist: ' + candidate);
+    }
+    if (!isWithinRoot(resolved, root)) {
+      throw new Error(
+        'Excluded path is outside the repository root: ' + resolved,
+      );
+    }
+    const identity = pathIdentity(resolved);
+    if (
+      canonicalPathKey(resolved) === canonicalPathKey(root) ||
+      identity === pathIdentity(root)
+    ) {
+      throw new Error('Repository root cannot be excluded');
+    }
+    if (identity === null) {
+      throw new Error('Excluded path cannot be inspected: ' + resolved);
+    }
+    if (!candidates.has(identity)) {
+      candidates.set(identity, resolved);
+    }
+  }
+
+  const ordered = Array.from(candidates.values()).sort((left, right) => {
+    const leftRelative = relativePath(left, root);
+    const rightRelative = relativePath(right, root);
+    return (
+      relativeParts(leftRelative).length - relativeParts(rightRelative).length ||
+      portableNameCompare(leftRelative, rightRelative)
+    );
+  });
+  const retained = [];
+  for (const candidate of ordered) {
+    if (
+      retained.some((parent) => isSameOrDescendantExisting(candidate, parent))
+    ) {
+      continue;
+    }
+    retained.push(candidate);
+  }
+  return retained.sort((left, right) =>
+    portableNameCompare(relativePath(left, root), relativePath(right, root)),
+  );
+}
+
+function resolvedTargetIsOutOfScope(
+  target,
+  root,
+  excludedPaths,
+  maxDepth,
+  includeVendored,
+) {
+  if (!isWithinRoot(target, root)) {
+    return true;
+  }
+  if (
+    excludedPaths.some((excluded) =>
+      isSameOrDescendantExisting(target, excluded),
+    )
+  ) {
+    return true;
+  }
+  const parts = relativeParts(relativePath(target, root));
+  const parentParts = parts.slice(0, -1).map((part) => part.toLowerCase());
+  if (parentParts.some((part) => IGNORED_DIRECTORIES.has(part))) {
+    return true;
+  }
+  if (
+    !includeVendored &&
+    parentParts.some((part) => VENDORED_DIRECTORIES.has(part))
+  ) {
+    return true;
+  }
+  return parentParts.length > maxDepth;
+}
+
 function splitLines(text) {
   if (!text) {
     return [];
@@ -424,6 +616,7 @@ function walkRepository(
   maxDirectories,
   maxDepth,
   includeVendored,
+  excludedPaths,
 ) {
   const files = [];
   const skipped = new Set();
@@ -434,6 +627,9 @@ function walkRepository(
   let truncated = false;
   let directoriesSeen = 0;
   let stopScan = false;
+  const excludedIdentities = new Set(
+    excludedPaths.map(pathIdentity).filter((identity) => identity !== null),
+  );
 
   function walk(current) {
     if (stopScan) {
@@ -446,7 +642,6 @@ function walkRepository(
       stopScan = true;
       return;
     }
-    directoriesSeen += 1;
     const relativeCurrent = relativePath(current, root);
     const depth = relativeCurrent ? relativeParts(relativeCurrent).length : 0;
 
@@ -454,11 +649,10 @@ function walkRepository(
     try {
       entries = fs.readdirSync(current, { withFileTypes: true });
     } catch (error) {
-      errors.push(
-        'Unable to scan ' + current + ': ' + (error.message || String(error)),
-      );
+      errors.push('Unable to scan directory: ' + (relativeCurrent || '.'));
       return;
     }
+    directoriesSeen += 1;
 
     entries.sort((left, right) => portableNameCompare(left.name, right.name));
     const directories = [];
@@ -466,6 +660,9 @@ function walkRepository(
 
     for (const entry of entries) {
       const entryPath = path.join(current, entry.name);
+      if (excludedIdentities.has(pathIdentity(entryPath))) {
+        continue;
+      }
       if (entry.isSymbolicLink()) {
         let resolved;
         let targetStat;
@@ -476,11 +673,23 @@ function walkRepository(
           skippedSymlinks.add(relativePath(entryPath, root));
           continue;
         }
-        if (targetStat.isDirectory() || !isWithinRoot(resolved, root)) {
+        if (targetStat.isDirectory()) {
           skippedSymlinks.add(relativePath(entryPath, root));
           continue;
         }
         if (targetStat.isFile()) {
+          if (
+            resolvedTargetIsOutOfScope(
+              resolved,
+              root,
+              excludedPaths,
+              maxDepth,
+              includeVendored,
+            )
+          ) {
+            skippedSymlinks.add(relativePath(entryPath, root));
+            continue;
+          }
           regularEntries.push(entry);
         } else if (targetStat.isDirectory()) {
           skippedSymlinks.add(relativePath(entryPath, root));
@@ -551,18 +760,27 @@ function walkRepository(
 }
 
 function isCiPath(relative) {
-  const lowered = relative.toLowerCase();
+  const parts = relativeParts(relative).map((part) => part.toLowerCase());
   const name = basename(relative).toLowerCase();
+  const extension = suffix(relative).toLowerCase();
   return (
-    lowered.startsWith('.github/workflows/') ||
-    lowered.startsWith('.circleci/') ||
-    lowered.startsWith('.buildkite/') ||
-    new Set([
-      '.gitlab-ci.yml',
-      'azure-pipelines.yml',
-      'bitbucket-pipelines.yml',
-      'jenkinsfile',
-    ]).has(name)
+    (parts.length === 3 &&
+      parts[0] === '.github' &&
+      parts[1] === 'workflows' &&
+      new Set(['.yaml', '.yml']).has(extension)) ||
+    (parts.length === 2 &&
+      parts[0] === '.circleci' &&
+      new Set(['config.yaml', 'config.yml']).has(parts[1])) ||
+    (parts.length >= 2 &&
+      new Set(['.buildkite', '.gitlab']).has(parts[0]) &&
+      new Set(['.json', '.yaml', '.yml']).has(extension)) ||
+    (parts.length === 1 &&
+      new Set([
+        '.gitlab-ci.yml',
+        'azure-pipelines.yml',
+        'bitbucket-pipelines.yml',
+        'jenkinsfile',
+      ]).has(name))
   );
 }
 
@@ -604,8 +822,25 @@ function hasArchitectureOrTestingSignal(relative) {
     .some((word) => HIGH_SIGNAL_DOC_WORDS.has(word));
 }
 
+function containsPathPair(parts, first, second) {
+  return parts.some(
+    (part, index) => part === first && parts[index + 1] === second,
+  );
+}
+
 function instructionKind(relative) {
   const name = basename(relative);
+  const parts = relativeParts(relative);
+  const foldedParts = parts.map((part) => part.toLowerCase());
+  if (
+    name === 'AGENTS.md' &&
+    foldedParts[foldedParts.length - 2] === '.kimi'
+  ) {
+    return 'kimi';
+  }
+  if (name === 'agents.md') {
+    return 'kimi';
+  }
   if (INSTRUCTION_FILES.has(name)) {
     if (
       name === 'copilot-instructions.md' &&
@@ -613,16 +848,109 @@ function instructionKind(relative) {
     ) {
       return null;
     }
+    if (name === 'REVIEW.md' && relativeParts(relative).length !== 1) {
+      return null;
+    }
     return INSTRUCTION_FILES.get(name);
   }
-  const parts = relativeParts(relative);
+  if (
+    suffix(relative).toLowerCase() === '.md' &&
+    foldedParts.length >= 3 &&
+    foldedParts[0] === '.claude' &&
+    foldedParts[1] === 'rules'
+  ) {
+    return 'claude-rule';
+  }
+  if (
+    name.toLowerCase().endsWith('.instructions.md') &&
+    foldedParts.length >= 3 &&
+    foldedParts[0] === '.github' &&
+    foldedParts[1] === 'instructions'
+  ) {
+    return 'copilot-path';
+  }
   if (
     suffix(relative).toLowerCase() === '.mdc' &&
-    parts.length >= 2 &&
-    parts[0].toLowerCase() === '.cursor' &&
-    parts[1].toLowerCase() === 'rules'
+    containsPathPair(foldedParts, '.cursor', 'rules')
   ) {
     return 'cursor';
+  }
+  if (
+    suffix(relative).toLowerCase() === '.md' &&
+    containsPathPair(foldedParts, '.windsurf', 'rules')
+  ) {
+    return 'windsurf-rule';
+  }
+  if (
+    name.toLowerCase() === 'bugbot.md' &&
+    parts.length >= 2 &&
+    parts[parts.length - 2].toLowerCase() === '.cursor'
+  ) {
+    return 'cursor-review';
+  }
+  return null;
+}
+
+function agentDefinitionKind(relative) {
+  const parts = relativeParts(relative).map((part) => part.toLowerCase());
+  if (suffix(relative).toLowerCase() === '.md' && parts.length >= 3) {
+    if (parts[0] === '.claude' && parts[1] === 'agents') {
+      return 'claude';
+    }
+    if (parts[0] === '.gemini' && parts[1] === 'agents') {
+      return 'gemini';
+    }
+  }
+  if (
+    suffix(relative).toLowerCase() === '.md' &&
+    parts.length >= 3 &&
+    parts[0] === '.github' &&
+    parts[1] === 'agents'
+  ) {
+    return 'copilot';
+  }
+  return null;
+}
+
+function promptKind(relative) {
+  const name = basename(relative).toLowerCase();
+  const parts = relativeParts(relative).map((part) => part.toLowerCase());
+  if (parts.length < 3) {
+    return null;
+  }
+  if (
+    suffix(relative).toLowerCase() === '.md' &&
+    parts[0] === '.claude' &&
+    parts[1] === 'commands'
+  ) {
+    return 'claude';
+  }
+  if (
+    name.endsWith('.prompt.md') &&
+    parts[0] === '.github' &&
+    parts[1] === 'prompts'
+  ) {
+    return 'copilot';
+  }
+  if (
+    suffix(relative).toLowerCase() === '.toml' &&
+    parts[0] === '.gemini' &&
+    parts[1] === 'commands'
+  ) {
+    return 'gemini';
+  }
+  if (
+    suffix(relative).toLowerCase() === '.md' &&
+    parts[0] === '.cursor' &&
+    parts[1] === 'commands'
+  ) {
+    return 'cursor';
+  }
+  if (
+    suffix(relative).toLowerCase() === '.md' &&
+    containsPathPair(parts, '.windsurf', 'workflows')
+  ) {
+    return 'windsurf';
   }
   return null;
 }
@@ -650,6 +978,7 @@ function isAgentConfig(relative) {
       '.cursor',
       '.gemini',
       '.kimi',
+      '.windsurf',
       'agents',
     ]).has(first)
   ) {
@@ -770,6 +1099,57 @@ function extractMarkdownTarget(rawTarget) {
   return target.split('#', 1)[0].split('?', 1)[0];
 }
 
+function instructionImportTargets(text) {
+  const targets = [];
+  for (const line of markdownProseLines(text)) {
+    INSTRUCTION_IMPORT.lastIndex = 0;
+    let match;
+    while ((match = INSTRUCTION_IMPORT.exec(line)) !== null) {
+      const target = match[1].replace(/[.,;:!?\)\]\}]+$/, '');
+      if (target) {
+        targets.push(target);
+      }
+    }
+  }
+  return targets;
+}
+
+function resolveInstructionTarget(source, target) {
+  const normalized = target.replace(/[\\/]/g, path.sep);
+  let candidate;
+  if (normalized === '~' || normalized.startsWith('~' + path.sep)) {
+    candidate = expandUser(normalized);
+  } else if (path.isAbsolute(normalized)) {
+    candidate = normalized;
+  } else {
+    candidate = path.join(path.dirname(source), normalized);
+  }
+  return resolveWithExistingAncestors(candidate);
+}
+
+function looksLikeInstructionImport(target, candidate) {
+  const normalized = target.replace(/\\/g, '/');
+  if (
+    normalized.startsWith('./') ||
+    normalized.startsWith('../') ||
+    normalized.startsWith('~/') ||
+    normalized.startsWith('/') ||
+    /^[A-Za-z]:\//.test(normalized)
+  ) {
+    return true;
+  }
+  try {
+    if (fs.existsSync(candidate)) {
+      return true;
+    }
+  } catch {
+    // Continue with the conservative lexical check below.
+  }
+  const parts = normalized.replace(/\/+$/, '').split('/');
+  const leaf = parts[parts.length - 1] || '';
+  return leaf !== '.' && leaf !== '..' && leaf.includes('.');
+}
+
 function summarizeInstruction(target, root, kind) {
   const warnings = [];
   let size = -1;
@@ -786,26 +1166,36 @@ function summarizeInstruction(target, root, kind) {
   const headings = [];
   const brokenLinks = [];
   const outsideLinks = [];
+  let imports = [];
+  const brokenImports = [];
+  const outsideImports = [];
   const lines = read.text === null ? [] : splitLines(read.text);
-  const documentedCommands =
-    read.text === null ? [] : documentedVerificationCommands(read.text);
+  const documentedCommandResult =
+    read.text === null
+      ? { reported: [], all: [] }
+      : documentedVerificationCommands(read.text);
+  const documentedCommands = documentedCommandResult.reported;
+  let headingCount = 0;
+  let relativeLinkTargetCount = 0;
 
   if (read.text !== null) {
-    for (const line of lines) {
+    const proseLines = markdownProseLines(read.text);
+    const proseText = proseLines.join('\n');
+    for (const line of proseLines) {
       const match = HEADING.exec(line);
-      if (match && headings.length < 50) {
-        headings.push(redactSensitiveText(match[2].trim()));
+      if (match) {
+        headingCount += 1;
+        if (headings.length < MAX_INSTRUCTION_HEADINGS) {
+          headings.push(redactSensitiveText(match[2].trim()));
+        }
       }
     }
 
     MARKDOWN_LINK.lastIndex = 0;
-    let count = 0;
     let match;
-    while (
-      count < 100 &&
-      (match = MARKDOWN_LINK.exec(read.text)) !== null
-    ) {
-      count += 1;
+    const linkMatches = Array.from(proseText.matchAll(MARKDOWN_LINK));
+    relativeLinkTargetCount = linkMatches.length;
+    for (match of linkMatches.slice(0, MAX_INSTRUCTION_REFERENCES)) {
       const linkTarget = extractMarkdownTarget(match[1]);
       if (!linkTarget) {
         continue;
@@ -819,6 +1209,25 @@ function summarizeInstruction(target, root, kind) {
         brokenLinks.push(linkTarget);
       }
     }
+    if (
+      kind === 'shared' ||
+      kind === 'claude' ||
+      kind === 'gemini' ||
+      kind === 'copilot'
+    ) {
+      for (const importTarget of sortedUnique(instructionImportTargets(read.text))) {
+        const candidate = resolveInstructionTarget(target, importTarget);
+        if (!looksLikeInstructionImport(importTarget, candidate)) {
+          continue;
+        }
+        imports.push(importTarget);
+        if (!isWithinRoot(candidate, root)) {
+          outsideImports.push(importTarget);
+        } else if (!fs.existsSync(candidate)) {
+          brokenImports.push(importTarget);
+        }
+      }
+    }
   }
 
   return {
@@ -830,8 +1239,30 @@ function summarizeInstruction(target, root, kind) {
       symlink: fs.lstatSync(target).isSymbolicLink(),
       headings,
       documented_verification_commands: documentedCommands,
-      broken_relative_links: sortedUnique(brokenLinks, 20),
-      relative_links_outside_repository: sortedUnique(outsideLinks, 20),
+      broken_relative_links: sortedUnique(
+        brokenLinks,
+        MAX_INSTRUCTION_LINK_RESULTS,
+      ),
+      relative_links_outside_repository: sortedUnique(
+        outsideLinks,
+        MAX_INSTRUCTION_LINK_RESULTS,
+      ),
+      imports: imports.slice(0, MAX_INSTRUCTION_REFERENCES),
+      broken_imports: sortedUnique(brokenImports, MAX_INSTRUCTION_REFERENCES),
+      imports_outside_repository: sortedUnique(
+        outsideImports,
+        MAX_INSTRUCTION_REFERENCES,
+      ),
+      headings_total: headingCount,
+      documented_verification_commands_total:
+        documentedCommandResult.all.length,
+      relative_link_targets_total: relativeLinkTargetCount,
+      broken_relative_links_total: new Set(brokenLinks).size,
+      relative_links_outside_repository_total: new Set(outsideLinks).size,
+      imports_total: imports.length,
+      broken_imports_total: new Set(brokenImports).size,
+      imports_outside_repository_total: new Set(outsideImports).size,
+      _all_documented_verification_commands: documentedCommandResult.all,
     },
     warnings,
   };
@@ -864,11 +1295,15 @@ function parsePackageScripts(target, root, scannedLockfiles) {
   ) {
     return { parsed: null, warning: null };
   }
-  const scripts = {};
-  for (const name of Object.keys(data.scripts).sort(rawCompare).slice(0, 100)) {
+  const allScripts = {};
+  for (const name of Object.keys(data.scripts).sort(rawCompare)) {
     if (typeof data.scripts[name] === 'string') {
-      scripts[name] = redactSensitiveText(data.scripts[name]);
+      allScripts[name] = redactSensitiveText(data.scripts[name]);
     }
+  }
+  const scripts = {};
+  for (const name of Object.keys(allScripts).slice(0, MAX_MANIFEST_COMMANDS)) {
+    scripts[name] = allScripts[name];
   }
   return {
     parsed: {
@@ -879,6 +1314,8 @@ function parsePackageScripts(target, root, scannedLockfiles) {
         scannedLockfiles,
       ),
       scripts,
+      scripts_total: Object.keys(allScripts).length,
+      _all_scripts: allScripts,
     },
     warning: null,
   };
@@ -942,7 +1379,7 @@ function parseTaskfileTargets(text) {
       targets.add(match[1]);
     }
   }
-  return sortedUnique(targets, 200);
+  return sortedUnique(targets);
 }
 
 function parseTaskTargets(target, root) {
@@ -969,7 +1406,7 @@ function parseTaskTargets(target, root) {
         targetSet.add(match[1]);
       }
     }
-    targets = sortedUnique(targetSet, 200);
+    targets = sortedUnique(targetSet);
   }
   if (!targets.length) {
     return { parsed: null, warning: null };
@@ -978,7 +1415,9 @@ function parseTaskTargets(target, root) {
     parsed: {
       source: relativePath(target, root),
       runner,
-      targets,
+      targets: targets.slice(0, MAX_TASK_TARGETS),
+      targets_total: targets.length,
+      _all_targets: targets,
     },
     warning: null,
   };
@@ -1087,16 +1526,64 @@ function parsePythonScripts(target, root) {
   for (const name of Object.keys(scripts).sort(rawCompare)) {
     sortedScripts[name] = scripts[name];
   }
+  const reportedScripts = {};
+  for (const name of Object.keys(sortedScripts).slice(0, MAX_MANIFEST_COMMANDS)) {
+    reportedScripts[name] = sortedScripts[name];
+  }
   return {
     parsed: {
       source: relativePath(target, root),
-      scripts: sortedScripts,
+      scripts: reportedScripts,
+      scripts_total: Object.keys(sortedScripts).length,
+      _all_scripts: sortedScripts,
     },
     warning: null,
   };
 }
 
-function runGit(root, args) {
+function resolveGitExecutable(root) {
+  const pathValue = process.env.PATH || process.env.Path || '';
+  const extensions =
+    process.platform === 'win32'
+      ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+          .split(';')
+          .filter(Boolean)
+      : [''];
+  for (const directory of pathValue.split(path.delimiter)) {
+    const base = directory || process.cwd();
+    for (const extension of extensions) {
+      const candidate = path.resolve(base, 'git' + extension);
+      try {
+        const metadata = fs.statSync(candidate);
+        fs.accessSync(candidate, fs.constants.X_OK);
+        if (!metadata.isFile()) {
+          continue;
+        }
+        const resolved = fs.realpathSync(candidate);
+        if (isWithinRoot(resolved, root)) {
+          return {
+            executable: null,
+            failureReason: 'git_executable_inside_target',
+          };
+        }
+        return { executable: resolved, failureReason: null };
+      } catch {
+        // Continue with the next executable suffix or PATH entry.
+      }
+    }
+  }
+  return { executable: null, failureReason: 'git_executable_unavailable' };
+}
+
+function runGit(root, args, resolution) {
+  if (resolution.executable === null) {
+    return {
+      returncode: 127,
+      stdout: '',
+      stderr: resolution.failureReason || '',
+      failure_reason: resolution.failureReason || 'git_executable_unavailable',
+    };
+  }
   const environment = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!key.toUpperCase().startsWith('GIT_') && value !== undefined) {
@@ -1107,7 +1594,7 @@ function runGit(root, args) {
   environment.GIT_TERMINAL_PROMPT = '0';
   environment.GIT_PAGER = 'cat';
   const result = spawnSync(
-    'git',
+    resolution.executable,
     [
       '-c',
       'core.fsmonitor=false',
@@ -1162,7 +1649,12 @@ function hasGitMarker(root) {
 }
 
 function gitMetadata(root) {
-  const topLevel = runGit(root, ['rev-parse', '--show-toplevel']);
+  const gitResolution = resolveGitExecutable(root);
+  const topLevel = runGit(
+    root,
+    ['rev-parse', '--show-toplevel'],
+    gitResolution,
+  );
   if (topLevel.returncode !== 0) {
     if (hasGitMarker(root)) {
       return {
@@ -1205,9 +1697,13 @@ function gitMetadata(root) {
       dirty_paths_truncated: null,
     };
   }
-  let branch = runGit(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  let branch = runGit(
+    root,
+    ['symbolic-ref', '--quiet', '--short', 'HEAD'],
+    gitResolution,
+  );
   if (branch.returncode !== 0) {
-    branch = runGit(root, ['rev-parse', '--short', 'HEAD']);
+    branch = runGit(root, ['rev-parse', '--short', 'HEAD'], gitResolution);
   }
   return {
     is_repository: true,
@@ -1253,6 +1749,7 @@ function buildReport(
   maxDirectories,
   maxDepth,
   includeVendored,
+  excludedPaths,
 ) {
   const walked = walkRepository(
     root,
@@ -1260,9 +1757,29 @@ function buildReport(
     maxDirectories,
     maxDepth,
     includeVendored,
+    excludedPaths,
   );
   const files = walked.files;
   const relatives = files.map((target) => relativePath(target, root));
+  const reportTruncatedSections = [];
+
+  function recordReportLimit(section, total, reported) {
+    if (total > reported) {
+      reportTruncatedSections.push({
+        path: section,
+        total,
+        reported,
+      });
+    }
+  }
+
+  function capPaths(values, section, limit = MAX_REPORTED_PATHS) {
+    const ordered = sortedUnique(values);
+    const reported = ordered.slice(0, limit);
+    recordReportLimit(section, ordered.length, reported.length);
+    return reported;
+  }
+
   const languageCounts = new Map();
   for (const target of files) {
     const language = LANGUAGE_EXTENSIONS.get(path.extname(target).toLowerCase());
@@ -1271,36 +1788,131 @@ function buildReport(
     }
   }
 
-  const manifests = capped(
+  const allManifests = sortedUnique(
     relatives.filter((relative) => MANIFEST_NAMES.has(basename(relative))),
   );
+  const manifests = capPaths(allManifests, 'project.manifests');
   const allLockfiles = relatives.filter((relative) =>
     LOCKFILE_NAMES.has(basename(relative)),
   );
-  const lockfiles = capped(allLockfiles);
-  const taskRunners = capped(
+  const lockfiles = capPaths(allLockfiles, 'project.lockfiles');
+  const allTaskRunners = sortedUnique(
     relatives.filter((relative) => TASK_RUNNER_NAMES.has(basename(relative))),
   );
-  const ciFiles = capped(relatives.filter(isCiPath));
-  const qualityConfigs = capped(
+  const taskRunners = capPaths(allTaskRunners, 'project.task_runners');
+  const allCiFiles = relatives.filter(isCiPath);
+  const ciFiles = capPaths(allCiFiles, 'automation.ci_files');
+  const qualityConfigs = capPaths(
     relatives.filter((relative) => QUALITY_CONFIG_NAMES.has(basename(relative))),
+    'automation.quality_configs',
   );
   const allHighSignalDocs = relatives.filter(isHighSignalDoc);
-  const docs = capped(allHighSignalDocs);
-  const testPaths = capped(relatives.filter(isTestPath));
-  const skills = capped(relatives.filter(isSkillPath));
-  const agentConfigs = capped(relatives.filter(isAgentConfig));
+  const docs = capPaths(allHighSignalDocs, 'documentation.high_signal_files');
+  const testPaths = capPaths(
+    relatives.filter(isTestPath),
+    'verification.test_paths',
+  );
+  const skills = capPaths(
+    relatives.filter(isSkillPath),
+    'agent_surface.skills',
+  );
+  const allAgentDefinitions = relatives
+    .map((relative) => {
+      const kind = agentDefinitionKind(relative);
+      return kind ? { path: relative, kind } : null;
+    })
+    .filter((item) => item !== null)
+    .sort((left, right) => rawCompare(left.path, right.path));
+  const agentDefinitions = allAgentDefinitions.slice(0, MAX_REPORTED_PATHS);
+  recordReportLimit(
+    'agent_surface.agent_definitions',
+    allAgentDefinitions.length,
+    agentDefinitions.length,
+  );
+  const allPrompts = relatives
+    .map((relative) => {
+      const kind = promptKind(relative);
+      return kind ? { path: relative, kind } : null;
+    })
+    .filter((item) => item !== null)
+    .sort((left, right) => rawCompare(left.path, right.path));
+  const prompts = allPrompts.slice(0, MAX_REPORTED_PATHS);
+  recordReportLimit('agent_surface.prompts', allPrompts.length, prompts.length);
+  const agentConfigs = capPaths(
+    relatives.filter(
+      (relative) =>
+        isAgentConfig(relative) &&
+        instructionKind(relative) === null &&
+        agentDefinitionKind(relative) === null &&
+        promptKind(relative) === null,
+    ),
+    'agent_surface.config',
+  );
 
   const warnings = [...walked.warnings];
+  let verificationEvidenceIncomplete = false;
   const instructionSummaries = [];
+  const instructionCandidates = [];
   for (let index = 0; index < files.length; index += 1) {
     const kind = instructionKind(relatives[index]);
-    if (!kind) {
-      continue;
+    if (kind) {
+      instructionCandidates.push({
+        target: files[index],
+        relative: relatives[index],
+        kind,
+      });
     }
-    const summarized = summarizeInstruction(files[index], root, kind);
+  }
+  instructionCandidates.sort(
+    (left, right) =>
+      relativeParts(left.relative).length -
+        relativeParts(right.relative).length ||
+      portableNameCompare(left.relative, right.relative),
+  );
+  recordReportLimit(
+    'agent_surface.instructions',
+    instructionCandidates.length,
+    Math.min(instructionCandidates.length, MAX_REPORTED_PATHS),
+  );
+  for (const candidate of instructionCandidates.slice(0, MAX_REPORTED_PATHS)) {
+    const summarized = summarizeInstruction(
+      candidate.target,
+      root,
+      candidate.kind,
+    );
     instructionSummaries.push(summarized.summary);
     warnings.push(...summarized.warnings);
+    verificationEvidenceIncomplete =
+      verificationEvidenceIncomplete || summarized.warnings.length > 0;
+    for (const [field, totalField] of [
+      ['headings', 'headings_total'],
+      [
+        'documented_verification_commands',
+        'documented_verification_commands_total',
+      ],
+      ['relative_link_targets_inspected', 'relative_link_targets_total'],
+      ['broken_relative_links', 'broken_relative_links_total'],
+      [
+        'relative_links_outside_repository',
+        'relative_links_outside_repository_total',
+      ],
+      ['imports', 'imports_total'],
+      ['broken_imports', 'broken_imports_total'],
+      ['imports_outside_repository', 'imports_outside_repository_total'],
+    ]) {
+      const reported =
+        field === 'relative_link_targets_inspected'
+          ? Math.min(
+              summarized.summary[totalField],
+              MAX_INSTRUCTION_REFERENCES,
+            )
+          : summarized.summary[field].length;
+      recordReportLimit(
+        'agent_surface.instructions[' + candidate.relative + '].' + field,
+        summarized.summary[totalField],
+        reported,
+      );
+    }
   }
   instructionSummaries.sort((left, right) => rawCompare(left.path, right.path));
 
@@ -1311,42 +1923,83 @@ function buildReport(
   for (let index = 0; index < relatives.length; index += 1) {
     pathByRelative.set(relatives[index], files[index]);
   }
-  for (const relative of manifests) {
+  const packageManifestCandidates = allManifests.filter(
+    (relative) => basename(relative) === 'package.json',
+  );
+  const pythonManifestCandidates = allManifests.filter(
+    (relative) => basename(relative) === 'pyproject.toml',
+  );
+  recordReportLimit(
+    'verification.package_script_manifests_inspected',
+    packageManifestCandidates.length,
+    Math.min(packageManifestCandidates.length, MAX_PARSED_MANIFESTS),
+  );
+  recordReportLimit(
+    'verification.python_entrypoint_manifests_inspected',
+    pythonManifestCandidates.length,
+    Math.min(pythonManifestCandidates.length, MAX_PARSED_MANIFESTS),
+  );
+  recordReportLimit(
+    'verification.task_runner_files_inspected',
+    allTaskRunners.length,
+    Math.min(allTaskRunners.length, MAX_PARSED_MANIFESTS),
+  );
+  for (const relative of packageManifestCandidates.slice(
+    0,
+    MAX_PARSED_MANIFESTS,
+  )) {
     const target = pathByRelative.get(relative);
-    if (basename(relative) === 'package.json' && packageScripts.length < 50) {
-      const result = parsePackageScripts(target, root, new Set(allLockfiles));
-      if (result.parsed) {
-        packageScripts.push(result.parsed);
-      }
-      if (result.warning) {
-        warnings.push(result.warning);
-      }
-    } else if (
-      basename(relative) === 'pyproject.toml' &&
-      pythonScripts.length < 50
-    ) {
-      const result = parsePythonScripts(target, root);
-      if (result.parsed) {
-        pythonScripts.push(result.parsed);
-      }
-      if (result.warning) {
-        warnings.push(result.warning);
-      }
-    }
-  }
-  for (const relative of taskRunners.slice(0, 50)) {
-    const result = parseTaskTargets(pathByRelative.get(relative), root);
+    const result = parsePackageScripts(target, root, new Set(allLockfiles));
     if (result.parsed) {
-      taskTargets.push(result.parsed);
+      packageScripts.push(result.parsed);
+      recordReportLimit(
+        'verification.package_scripts[' + relative + '].scripts',
+        result.parsed.scripts_total,
+        Object.keys(result.parsed.scripts).length,
+      );
     }
     if (result.warning) {
       warnings.push(result.warning);
+      verificationEvidenceIncomplete = true;
+    }
+  }
+  for (const relative of pythonManifestCandidates.slice(
+    0,
+    MAX_PARSED_MANIFESTS,
+  )) {
+    const result = parsePythonScripts(pathByRelative.get(relative), root);
+    if (result.parsed) {
+      pythonScripts.push(result.parsed);
+      recordReportLimit(
+        'verification.python_entrypoints[' + relative + '].scripts',
+        result.parsed.scripts_total,
+        Object.keys(result.parsed.scripts).length,
+      );
+    }
+    if (result.warning) {
+      warnings.push(result.warning);
+      verificationEvidenceIncomplete = true;
+    }
+  }
+  for (const relative of allTaskRunners.slice(0, MAX_PARSED_MANIFESTS)) {
+    const result = parseTaskTargets(pathByRelative.get(relative), root);
+    if (result.parsed) {
+      taskTargets.push(result.parsed);
+      recordReportLimit(
+        'verification.task_targets[' + relative + '].targets',
+        result.parsed.targets_total,
+        result.parsed.targets.length,
+      );
+    }
+    if (result.warning) {
+      warnings.push(result.warning);
+      verificationEvidenceIncomplete = true;
     }
   }
 
   const verificationCommands = [];
   for (const packageInfo of packageScripts) {
-    for (const [name, command] of Object.entries(packageInfo.scripts)) {
+    for (const [name, command] of Object.entries(packageInfo._all_scripts)) {
       if (VERIFICATION_NAME.test(name)) {
         verificationCommands.push({
           source: packageInfo.source,
@@ -1357,7 +2010,7 @@ function buildReport(
     }
   }
   for (const runner of taskTargets) {
-    for (const target of runner.targets) {
+    for (const target of runner._all_targets) {
       if (VERIFICATION_NAME.test(target)) {
         verificationCommands.push({
           source: runner.source,
@@ -1368,7 +2021,7 @@ function buildReport(
     }
   }
   for (const instruction of instructionSummaries) {
-    for (const command of instruction.documented_verification_commands) {
+    for (const command of instruction._all_documented_verification_commands) {
       verificationCommands.push({
         source: instruction.path,
         name: 'documented:L' + command.line,
@@ -1376,21 +2029,121 @@ function buildReport(
       });
     }
   }
+  for (const packageInfo of packageScripts) {
+    delete packageInfo._all_scripts;
+  }
+  for (const entrypoint of pythonScripts) {
+    delete entrypoint._all_scripts;
+  }
+  for (const runner of taskTargets) {
+    delete runner._all_targets;
+  }
+  for (const instruction of instructionSummaries) {
+    delete instruction._all_documented_verification_commands;
+  }
+  const allVerificationCommands = verificationCommands;
+  const reportedVerificationCommands = allVerificationCommands.slice(
+    0,
+    MAX_DECLARED_COMMANDS,
+  );
+  recordReportLimit(
+    'verification.declared_commands',
+    allVerificationCommands.length,
+    reportedVerificationCommands.length,
+  );
 
   const rootInstructions = instructionSummaries.filter(
-    (item) => !item.path.includes('/'),
+    (item) =>
+      (!item.path.includes('/') || item.path.toLowerCase() === '.kimi/agents.md') &&
+      item.kind !== 'claude-review',
   );
   const brokenLinkCount = instructionSummaries.reduce(
     (total, item) => total + item.broken_relative_links.length,
     0,
   );
+  const brokenImportCount = instructionSummaries.reduce(
+    (total, item) => total + item.broken_imports.length,
+    0,
+  );
+  const outsideImportCount = instructionSummaries.reduce(
+    (total, item) => total + item.imports_outside_repository.length,
+    0,
+  );
   const versionControl = gitMetadata(root);
-  const diagnostics = [];
-  if (!files.length) {
-    diagnostics.push('empty_repository');
+  let topLevel = [];
+  try {
+    const excludedIdentities = new Set(
+      excludedPaths.map(pathIdentity).filter((identity) => identity !== null),
+    );
+    const allTopLevel = fs
+      .readdirSync(root)
+      .filter((entry) =>
+        !excludedIdentities.has(pathIdentity(path.join(root, entry))),
+      )
+      .sort(portableNameCompare);
+    topLevel = allTopLevel.slice(0, MAX_REPORTED_PATHS);
+    recordReportLimit(
+      'project.top_level_entries',
+      allTopLevel.length,
+      topLevel.length,
+    );
+  } catch (error) {
+    warnings.push(
+      'Unable to list repository root: ' + (error.message || String(error)),
+    );
   }
-  if (!instructionSummaries.length) {
-    diagnostics.push('no_agent_instruction_surface_detected');
+
+  const allLanguages = Array.from(languageCounts.entries())
+    .map(([name, filesCount], index) => ({ name, files: filesCount, index }))
+    .sort((left, right) => right.files - left.files || left.index - right.index)
+    .map(({ name, files: filesCount }) => ({ name, files: filesCount }));
+  const languages = allLanguages.slice(0, MAX_REPORTED_LANGUAGES);
+  recordReportLimit('project.languages', allLanguages.length, languages.length);
+
+  const skippedDirectories = walked.skipped.slice(0, MAX_REPORTED_PATHS);
+  const skippedSymlinks = walked.skippedSymlinks.slice(0, MAX_REPORTED_PATHS);
+  const skippedSpecialFiles = walked.skippedSpecialFiles.slice(
+    0,
+    MAX_REPORTED_PATHS,
+  );
+  recordReportLimit(
+    'scan.skipped_directories',
+    walked.skipped.length,
+    skippedDirectories.length,
+  );
+  recordReportLimit(
+    'scan.skipped_symlinks',
+    walked.skippedSymlinks.length,
+    skippedSymlinks.length,
+  );
+  recordReportLimit(
+    'scan.skipped_special_files',
+    walked.skippedSpecialFiles.length,
+    skippedSpecialFiles.length,
+  );
+
+  const warningValues = sortedUnique(warnings);
+  const reportedWarnings = warningValues.slice(0, MAX_REPORTED_WARNINGS);
+  recordReportLimit('scan.warnings', warningValues.length, reportedWarnings.length);
+
+  const diagnostics = [];
+  const traversalDetectionIncomplete =
+    walked.limitReasons.length > 0 || walked.warnings.length > 0;
+  if (!files.length) {
+    diagnostics.push(
+      traversalDetectionIncomplete
+        ? 'repository_inventory_incomplete'
+        : 'empty_repository',
+    );
+  }
+  if (!instructionCandidates.length) {
+    diagnostics.push(
+      traversalDetectionIncomplete
+        ? 'agent_instruction_surface_detection_incomplete'
+        : 'no_agent_instruction_surface_detected',
+    );
+  } else if (!rootInstructions.length) {
+    diagnostics.push('no_root_instruction_entrypoint_detected');
   } else if (!rootInstructions.some((item) => item.kind === 'shared')) {
     diagnostics.push('provider_specific_root_instructions_only');
   }
@@ -1403,17 +2156,51 @@ function buildReport(
   if (brokenLinkCount) {
     diagnostics.push('broken_relative_links_in_agent_instructions');
   }
-  if (!verificationCommands.length) {
-    diagnostics.push('no_declared_verification_command_detected');
+  if (brokenImportCount) {
+    diagnostics.push('broken_imports_in_agent_instructions');
   }
-  if (!ciFiles.length) {
-    diagnostics.push('no_ci_configuration_detected');
+  if (outsideImportCount) {
+    diagnostics.push('instruction_imports_outside_repository');
+  }
+  const incompleteVerificationSections = new Set([
+    'agent_surface.instructions',
+    'verification.package_script_manifests_inspected',
+    'verification.python_entrypoint_manifests_inspected',
+    'verification.task_runner_files_inspected',
+  ]);
+  const verificationDetectionIncomplete =
+    traversalDetectionIncomplete ||
+    verificationEvidenceIncomplete ||
+    reportTruncatedSections.some(
+      (item) =>
+        incompleteVerificationSections.has(item.path) ||
+        item.path.endsWith('.documented_verification_commands') ||
+        item.path.endsWith('.scripts') ||
+        item.path.endsWith('.targets'),
+    );
+  if (!allVerificationCommands.length) {
+    diagnostics.push(
+      verificationDetectionIncomplete
+        ? 'declared_verification_command_detection_incomplete'
+        : 'no_declared_verification_command_detected',
+    );
+  }
+  if (!allCiFiles.length) {
+    diagnostics.push(
+      traversalDetectionIncomplete
+        ? 'ci_configuration_detection_incomplete'
+        : 'no_ci_configuration_detected',
+    );
   }
   if (
     files.length >= 100 &&
     !allHighSignalDocs.some(hasArchitectureOrTestingSignal)
   ) {
-    diagnostics.push('no_high_signal_architecture_or_testing_doc_detected');
+    diagnostics.push(
+      traversalDetectionIncomplete
+        ? 'high_signal_architecture_or_testing_doc_detection_incomplete'
+        : 'no_high_signal_architecture_or_testing_doc_detected',
+    );
   }
   if (walked.limitReasons.includes('max_files')) {
     diagnostics.push('scan_truncated_at_file_limit');
@@ -1424,30 +2211,15 @@ function buildReport(
   if (walked.limitReasons.includes('max_depth')) {
     diagnostics.push('scan_truncated_at_depth_limit');
   }
+  if (reportTruncatedSections.length) {
+    diagnostics.push('report_fields_truncated');
+  }
   if (versionControl.worktree_state === 'unverified') {
     diagnostics.push('git_worktree_state_unverified');
   }
   if (versionControl.repository_state === 'unverified') {
     diagnostics.push('git_repository_identity_unverified');
   }
-
-  let topLevel = [];
-  try {
-    topLevel = fs
-      .readdirSync(root)
-      .sort(portableNameCompare)
-      .slice(0, 200);
-  } catch (error) {
-    warnings.push(
-      'Unable to list repository root: ' + (error.message || String(error)),
-    );
-  }
-
-  const languages = Array.from(languageCounts.entries())
-    .map(([name, filesCount], index) => ({ name, files: filesCount, index }))
-    .sort((left, right) => right.files - left.files || left.index - right.index)
-    .slice(0, 20)
-    .map(({ name, files: filesCount }) => ({ name, files: filesCount }));
 
   return {
     schema_version: SCHEMA_VERSION,
@@ -1460,20 +2232,35 @@ function buildReport(
       max_directories: maxDirectories,
       max_depth: maxDepth,
       truncated: walked.truncated,
+      traversal_incomplete: traversalDetectionIncomplete,
       limit_reasons: walked.limitReasons,
+      report_truncated: reportTruncatedSections.length > 0,
+      report_truncated_sections: reportTruncatedSections,
+      report_limits: {
+        max_reported_paths: MAX_REPORTED_PATHS,
+        max_reported_warnings: MAX_REPORTED_WARNINGS,
+        max_parsed_manifests: MAX_PARSED_MANIFESTS,
+        max_declared_commands: MAX_DECLARED_COMMANDS,
+        max_reported_languages: MAX_REPORTED_LANGUAGES,
+        max_instruction_headings: MAX_INSTRUCTION_HEADINGS,
+        max_instruction_references: MAX_INSTRUCTION_REFERENCES,
+        max_instruction_link_results: MAX_INSTRUCTION_LINK_RESULTS,
+        max_documented_commands_per_instruction:
+          MAX_DOCUMENTED_COMMANDS_PER_INSTRUCTION,
+        max_manifest_commands: MAX_MANIFEST_COMMANDS,
+        max_task_targets: MAX_TASK_TARGETS,
+      },
       include_vendored: includeVendored,
-      skipped_directories: walked.skipped.slice(0, MAX_REPORTED_PATHS),
-      skipped_symlinks: walked.skippedSymlinks.slice(0, MAX_REPORTED_PATHS),
-      skipped_special_files: walked.skippedSpecialFiles.slice(
-        0,
-        MAX_REPORTED_PATHS,
-      ),
-      warnings: sortedUnique(warnings, 100),
+      excluded_paths: excludedPaths.map((target) => relativePath(target, root)),
+      skipped_directories: skippedDirectories,
+      skipped_symlinks: skippedSymlinks,
+      skipped_special_files: skippedSpecialFiles,
+      warnings: reportedWarnings,
     },
     version_control: versionControl,
     project: {
       top_level_entries: topLevel,
-      ecosystems: ecosystemsFor(manifests),
+      ecosystems: ecosystemsFor(allManifests),
       languages,
       manifests,
       lockfiles,
@@ -1482,6 +2269,8 @@ function buildReport(
     agent_surface: {
       instructions: instructionSummaries,
       skills,
+      agent_definitions: agentDefinitions,
+      prompts,
       config: agentConfigs,
     },
     documentation: { high_signal_files: docs },
@@ -1494,29 +2283,67 @@ function buildReport(
       package_scripts: packageScripts,
       python_entrypoints: pythonScripts,
       task_targets: taskTargets,
-      declared_commands: verificationCommands.slice(0, 250),
+      declared_commands: reportedVerificationCommands,
     },
     diagnostic_hints: diagnostics,
   };
+}
+
+function markdownCode(value) {
+  const escaped = Array.from(String(value), (character) => {
+    const code = character.codePointAt(0);
+    return character === '`' || code < 32 || code === 127
+      ? '\\u' + code.toString(16).padStart(4, '0')
+      : character;
+  }).join('');
+  return '`' + escaped + '`';
+}
+
+function markdownCodeList(values) {
+  const rendered = Array.from(values, markdownCode);
+  return rendered.length ? rendered.join(', ') : 'none';
 }
 
 function renderMarkdown(report) {
   const project = report.project;
   const agentSurface = report.agent_surface;
   const verification = report.verification;
-  const tick = String.fromCharCode(96);
   const repositoryDisplay =
     report.version_control.is_repository === null
       ? 'Unverified'
       : report.version_control.is_repository
         ? 'True'
         : 'False';
+  const traversalIncomplete = report.scan.traversal_incomplete;
+  const instructionDetectionIncomplete = report.diagnostic_hints.includes(
+    'agent_instruction_surface_detection_incomplete',
+  );
+  const verificationDetectionIncomplete = report.diagnostic_hints.includes(
+    'declared_verification_command_detection_incomplete',
+  );
+  const ecosystemsDisplay =
+    project.ecosystems.join(', ') ||
+    (traversalIncomplete
+      ? 'unverified (traversal incomplete)'
+      : 'none detected');
   const lines = [
     '# Agentize Skill repository inventory',
     '',
-    '- Root: ' + tick + report.root + tick,
+    '- Root: ' + markdownCode(report.root),
     '- Files scanned: ' + report.scan.files_seen,
-    '- Ecosystems: ' + (project.ecosystems.join(', ') || 'none detected'),
+    '- Traversal truncated: ' +
+      (report.scan.truncated ? 'True' : 'False') +
+      ' (' +
+      (report.scan.limit_reasons.join(', ') || 'no limit reached') +
+      ')',
+    '- Traversal incomplete: ' +
+      (report.scan.traversal_incomplete ? 'True' : 'False'),
+    '- Report fields truncated: ' +
+      markdownCodeList(
+        report.scan.report_truncated_sections.map((item) => item.path),
+      ),
+    '- Excluded paths: ' + markdownCodeList(report.scan.excluded_paths),
+    '- Ecosystems: ' + ecosystemsDisplay,
     '- Git repository: ' + repositoryDisplay,
     '- Git worktree state: ' +
       (report.version_control.worktree_state || 'unverified'),
@@ -1532,12 +2359,20 @@ function renderMarkdown(report) {
         details +=
           ', ' + instruction.broken_relative_links.length + ' broken link(s)';
       }
+      if (instruction.broken_imports.length) {
+        details +=
+          ', ' + instruction.broken_imports.length + ' broken import(s)';
+      }
       lines.push(
-        '- ' + tick + instruction.path + tick + ' (' + details + ')',
+        '- ' + markdownCode(instruction.path) + ' (' + details + ')',
       );
     }
   } else {
-    lines.push('- No recognized instruction file detected.');
+    lines.push(
+      instructionDetectionIncomplete
+        ? '- No recognized instruction file detected in the scanned files; detection was incomplete.'
+        : '- No recognized instruction file detected.',
+    );
   }
 
   lines.push('', '## Verification signals', '');
@@ -1545,27 +2380,29 @@ function renderMarkdown(report) {
     for (const command of verification.declared_commands.slice(0, 40)) {
       lines.push(
         '- ' +
-          tick +
-          command.name +
-          tick +
+          markdownCode(command.name) +
           ' from ' +
-          tick +
-          command.source +
-          tick +
+          markdownCode(command.source) +
           ': ' +
-          tick +
-          command.definition +
-          tick,
+          markdownCode(command.definition),
       );
     }
   } else {
-    lines.push('- No declared verification command detected.');
+    lines.push(
+      verificationDetectionIncomplete
+        ? '- Declared verification-command detection is incomplete.'
+        : '- No declared verification command detected.',
+    );
   }
 
   lines.push('', '## Other evidence', '');
   lines.push(
     '- Skills: ' +
       agentSurface.skills.length +
+      '; agent definitions: ' +
+      agentSurface.agent_definitions.length +
+      '; prompts: ' +
+      agentSurface.prompts.length +
       '; CI files: ' +
       report.automation.ci_files.length +
       '; test paths: ' +
@@ -1573,14 +2410,13 @@ function renderMarkdown(report) {
   );
   lines.push(
     '- High-signal docs: ' +
-      (report.documentation.high_signal_files.slice(0, 20).join(', ') ||
-        'none'),
+      markdownCodeList(report.documentation.high_signal_files.slice(0, 20)),
   );
 
   lines.push('', '## Diagnostic hints', '');
   if (report.diagnostic_hints.length) {
     for (const hint of report.diagnostic_hints) {
-      lines.push('- ' + tick + hint + tick);
+      lines.push('- ' + markdownCode(hint));
     }
   } else {
     lines.push('- No automatic hints. Human assessment is still required.');
@@ -1589,7 +2425,7 @@ function renderMarkdown(report) {
   if (report.scan.warnings.length) {
     lines.push('', '## Scanner warnings', '');
     for (const warning of report.scan.warnings) {
-      lines.push('- ' + warning);
+      lines.push('- ' + markdownCode(warning));
     }
   }
   return lines.join('\n') + '\n';
@@ -1600,6 +2436,7 @@ function usage() {
     'usage: scan_repo.cjs [--root PATH] [--format json|markdown]',
     '                     [--max-files NUMBER] [--max-directories NUMBER]',
     '                     [--max-depth NUMBER] [--include-vendored]',
+    '                     [--exclude-path PATH]...',
     '',
     'Read a repository and report coding-agent workflow signals.',
   ].join('\n');
@@ -1613,6 +2450,7 @@ function parseArguments(argumentsList) {
     maxDirectories: DEFAULT_MAX_DIRECTORIES,
     maxDepth: DEFAULT_MAX_DEPTH,
     includeVendored: false,
+    excludePaths: [],
   };
   for (let index = 0; index < argumentsList.length; index += 1) {
     const argument = argumentsList[index];
@@ -1651,6 +2489,12 @@ function parseArguments(argumentsList) {
       options.maxDepth = Number(argumentsList[index]);
     } else if (argument === '--include-vendored') {
       options.includeVendored = true;
+    } else if (argument === '--exclude-path') {
+      index += 1;
+      if (index >= argumentsList.length) {
+        throw new Error('--exclude-path requires a value');
+      }
+      options.excludePaths.push(argumentsList[index]);
     } else if (argument === '--help' || argument === '-h') {
       process.stdout.write(usage() + '\n');
       process.exit(0);
@@ -1669,6 +2513,28 @@ function expandUser(input) {
     return path.join(os.homedir(), input.slice(2));
   }
   return input;
+}
+
+function declaresAgentizeSkill(packageRoot) {
+  const read = readText(path.join(packageRoot, 'SKILL.md'), packageRoot, 32000);
+  if (read.warning || read.text === null) {
+    return false;
+  }
+  const lines = splitLines(read.text);
+  if (!lines.length || lines[0].trim() !== '---') {
+    return false;
+  }
+  for (const line of lines.slice(1, 101)) {
+    if (line.trim() === '---') {
+      return false;
+    }
+    const match = /^\s*name\s*:\s*(.*?)\s*$/.exec(line);
+    if (match) {
+      const value = match[1].trim().replace(/^['"]|['"]$/g, '');
+      return value === 'agentize-skill';
+    }
+  }
+  return false;
 }
 
 function main(argumentsList) {
@@ -1716,12 +2582,30 @@ function main(argumentsList) {
     return 2;
   }
 
+  const requestedExclusions = [...options.excludePaths];
+  const scannerPackage = fs.realpathSync(path.resolve(__dirname, '..'));
+  if (
+    canonicalPathKey(scannerPackage) !== canonicalPathKey(root) &&
+    isWithinRoot(scannerPackage, root) &&
+    declaresAgentizeSkill(scannerPackage)
+  ) {
+    requestedExclusions.push(scannerPackage);
+  }
+  let excludedPaths;
+  try {
+    excludedPaths = normalizeExcludedPaths(root, requestedExclusions);
+  } catch (error) {
+    process.stderr.write((error.message || String(error)) + '\n');
+    return 2;
+  }
+
   const report = buildReport(
     root,
     options.maxFiles,
     options.maxDirectories,
     options.maxDepth,
     options.includeVendored,
+    excludedPaths,
   );
   if (options.format === 'markdown') {
     process.stdout.write(renderMarkdown(report));

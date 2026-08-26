@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -16,11 +17,21 @@ from typing import Any, Iterable
 from urllib.parse import unquote
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 DEFAULT_MAX_FILES = 50_000
 DEFAULT_MAX_DIRECTORIES = 50_000
 DEFAULT_MAX_DEPTH = 64
 MAX_REPORTED_PATHS = 200
+MAX_REPORTED_WARNINGS = 100
+MAX_PARSED_MANIFESTS = 50
+MAX_DECLARED_COMMANDS = 250
+MAX_REPORTED_LANGUAGES = 20
+MAX_INSTRUCTION_HEADINGS = 50
+MAX_INSTRUCTION_REFERENCES = 100
+MAX_INSTRUCTION_LINK_RESULTS = 20
+MAX_DOCUMENTED_COMMANDS_PER_INSTRUCTION = 50
+MAX_MANIFEST_COMMANDS = 100
+MAX_TASK_TARGETS = 200
 
 IGNORED_DIRECTORIES = {
     ".git",
@@ -54,6 +65,7 @@ INSTRUCTION_FILES = {
     "CLAUDE.md": "claude",
     "CLAUDE.local.md": "claude",
     "GEMINI.md": "gemini",
+    "REVIEW.md": "claude-review",
     ".cursorrules": "cursor",
     ".windsurfrules": "windsurf",
     "copilot-instructions.md": "copilot",
@@ -228,7 +240,7 @@ COMMAND_START = re.compile(
     r"zsh)(?:\s|$)",
     re.IGNORECASE,
 )
-FENCE = re.compile(r"^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_-]*)\s*$")
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*?)[ \t]*$")
 COMMAND_FENCE_LANGUAGES = {
     "",
     "bash",
@@ -244,6 +256,9 @@ COMMAND_FENCE_LANGUAGES = {
     "zsh",
 }
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+INSTRUCTION_IMPORT = re.compile(
+    r"(?<![A-Za-z0-9_])@((?:~[/\\]|\.{0,2}[/\\]|[/\\])?[^\s`\"'<>]+)"
+)
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 MAKE_TARGET = re.compile(r"^([A-Za-z0-9_.-]+)\s*:(?![=])")
 JUST_TARGET = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+[^:=]+)?\s*:(?![=])")
@@ -279,6 +294,74 @@ def portable_name_key(value: str) -> tuple[bytes, bytes]:
     return folded.encode("utf-8"), value.encode("utf-8")
 
 
+def path_identity(path: Path) -> tuple[int, int] | None:
+    """Return a filesystem identity that is stable across spelling aliases."""
+    try:
+        metadata = path.stat()
+    except OSError:
+        return None
+    return metadata.st_dev, metadata.st_ino
+
+
+def is_same_or_descendant_existing(candidate: Path, ancestor: Path) -> bool:
+    """Compare existing paths by identity, including on case-insensitive volumes."""
+    ancestor_identity = path_identity(ancestor)
+    if ancestor_identity is None:
+        return False
+    current = candidate
+    while True:
+        if path_identity(current) == ancestor_identity:
+            return True
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
+
+
+def normalize_excluded_paths(root: Path, values: Iterable[str]) -> list[Path]:
+    """Resolve exact exclusions inside root and remove redundant descendants."""
+    candidates: dict[tuple[int, int], Path] = {}
+    for value in values:
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        try:
+            resolved = candidate.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise ValueError(
+                f"Excluded path does not exist: {candidate}"
+            ) from error
+        try:
+            relative = resolved.relative_to(root)
+        except ValueError as error:
+            raise ValueError(
+                f"Excluded path is outside the repository root: {resolved}"
+            ) from error
+        identity = path_identity(resolved)
+        if not relative.parts or identity == path_identity(root):
+            raise ValueError("Repository root cannot be excluded")
+        if identity is None:
+            raise ValueError(f"Excluded path cannot be inspected: {resolved}")
+        candidates.setdefault(identity, resolved)
+
+    ordered = sorted(
+        candidates.values(),
+        key=lambda candidate: (
+            len(candidate.relative_to(root).parts),
+            portable_name_key(relative_path(candidate, root)),
+        ),
+    )
+    retained: list[Path] = []
+    for candidate in ordered:
+        if any(is_same_or_descendant_existing(candidate, parent) for parent in retained):
+            continue
+        retained.append(candidate)
+    return sorted(
+        retained,
+        key=lambda candidate: portable_name_key(relative_path(candidate, root)),
+    )
+
+
 def redact_sensitive_text(value: str) -> str:
     redacted = SENSITIVE_ASSIGNMENT.sub(r"\1=<redacted>", value)
     redacted = SENSITIVE_OPTION.sub(r"\1 <redacted>", redacted)
@@ -286,9 +369,61 @@ def redact_sensitive_text(value: str) -> str:
     return BEARER_CREDENTIAL.sub(r"\1 <redacted>", redacted)
 
 
-def documented_verification_commands(text: str) -> list[dict[str, Any]]:
+def markdown_prose_lines(text: str) -> list[str]:
+    """Return rendered Markdown prose with fenced, inline, and commented code removed."""
+    prose: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    in_html_comment = False
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if fence_character is not None:
+            if stripped.startswith(fence_character * fence_length) and not stripped.lstrip(
+                fence_character
+            ).strip():
+                fence_character = None
+                fence_length = 0
+            prose.append("")
+            continue
+
+        pieces: list[str] = []
+        cursor = 0
+        while cursor < len(raw_line):
+            if in_html_comment:
+                end = raw_line.find("-->", cursor)
+                if end < 0:
+                    cursor = len(raw_line)
+                    break
+                cursor = end + 3
+                in_html_comment = False
+                continue
+            start = raw_line.find("<!--", cursor)
+            if start < 0:
+                pieces.append(raw_line[cursor:])
+                break
+            pieces.append(raw_line[cursor:start])
+            cursor = start + 4
+            in_html_comment = True
+
+        line = "".join(pieces)
+        match = FENCE.match(line)
+        if match:
+            fence_character = match.group(1)[0]
+            fence_length = len(match.group(1))
+            prose.append("")
+            continue
+        prose.append(re.sub(r"`+[^`]*`+", "", line))
+
+    return prose
+
+
+def documented_verification_commands(
+    text: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Collect conservative command candidates from fenced instruction examples."""
     commands: list[dict[str, Any]] = []
+    all_commands: list[dict[str, Any]] = []
     fence_character: str | None = None
     fence_length = 0
     inspect_fence = False
@@ -306,7 +441,9 @@ def documented_verification_commands(text: str) -> list[dict[str, Any]]:
             match = FENCE.match(line)
             if not match:
                 continue
-            marker, language = match.groups()
+            marker, info = match.groups()
+            info_parts = (info or "").split(maxsplit=1)
+            language = (info_parts[0] if info_parts else "").strip("{}.")
             fence_character = marker[0]
             fence_length = len(marker)
             inspect_fence = language.casefold() in COMMAND_FENCE_LANGUAGES
@@ -321,7 +458,7 @@ def documented_verification_commands(text: str) -> list[dict[str, Any]]:
             pending_command = None
             pending_line = 0
             continue
-        if not inspect_fence or len(commands) >= 50:
+        if not inspect_fence:
             continue
 
         candidate = stripped
@@ -352,17 +489,42 @@ def documented_verification_commands(text: str) -> list[dict[str, Any]]:
             or not VERIFICATION_COMMAND.search(candidate)
         ):
             continue
-        commands.append(
-            {
-                "line": command_line,
-                "definition": redact_sensitive_text(candidate),
-            }
-        )
-    return commands
+        command = {
+            "line": command_line,
+            "definition": redact_sensitive_text(candidate),
+        }
+        if len(commands) < MAX_DOCUMENTED_COMMANDS_PER_INSTRUCTION:
+            commands.append(command)
+        all_commands.append(command)
+    return commands, all_commands
 
 
-def capped(values: Iterable[str], limit: int = MAX_REPORTED_PATHS) -> list[str]:
-    return sorted(set(values))[:limit]
+def path_is_excluded(path: Path, excluded_identities: set[tuple[int, int]]) -> bool:
+    identity = path_identity(path)
+    return identity is not None and identity in excluded_identities
+
+
+def resolved_target_is_out_of_scope(
+    target: Path,
+    root: Path,
+    excluded_paths: list[Path],
+    max_depth: int,
+    include_vendored: bool,
+) -> bool:
+    """Reject file-symlink targets that would bypass traversal boundaries."""
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        return True
+    if any(is_same_or_descendant_existing(target, excluded) for excluded in excluded_paths):
+        return True
+    parent_parts = relative.parts[:-1]
+    folded_parts = {part.casefold() for part in parent_parts}
+    if folded_parts & IGNORED_DIRECTORIES:
+        return True
+    if not include_vendored and folded_parts & VENDORED_DIRECTORIES:
+        return True
+    return len(parent_parts) > max_depth
 
 
 def walk_repository(
@@ -371,7 +533,10 @@ def walk_repository(
     max_directories: int,
     max_depth: int,
     include_vendored: bool,
-) -> tuple[list[Path], list[str], list[str], list[str], list[str], bool, int, list[str]]:
+    excluded_paths: list[Path],
+) -> tuple[
+    list[Path], list[str], list[str], list[str], list[str], bool, int, list[str]
+]:
     files: list[Path] = []
     skipped: set[str] = set()
     skipped_symlinks: set[str] = set()
@@ -381,10 +546,19 @@ def walk_repository(
     directories_seen = 0
     limit_reasons: set[str] = set()
     stop_scan = False
+    excluded_identities = {
+        identity
+        for excluded in excluded_paths
+        if (identity := path_identity(excluded)) is not None
+    }
 
     def on_error(error: OSError) -> None:
         target = getattr(error, "filename", None) or "unknown path"
-        errors.append(f"Unable to scan {target}: {error.strerror or error}")
+        try:
+            display = relative_path(Path(target), root)
+        except ValueError:
+            display = Path(target).name or "unknown path"
+        errors.append(f"Unable to scan directory: {display}")
 
     for current, directory_names, file_names in os.walk(
         root, topdown=True, followlinks=False, onerror=on_error
@@ -400,6 +574,8 @@ def walk_repository(
         kept_directories: list[str] = []
         for directory_name in sorted(directory_names, key=portable_name_key):
             directory_path = current_path / directory_name
+            if path_is_excluded(directory_path, excluded_identities):
+                continue
             if directory_path.is_symlink():
                 skipped_symlinks.add(relative_path(directory_path, root))
                 continue
@@ -422,11 +598,21 @@ def walk_repository(
 
         for file_name in sorted(file_names, key=portable_name_key):
             file_path = current_path / file_name
+            if path_is_excluded(file_path, excluded_identities):
+                continue
             if file_path.is_symlink():
                 try:
                     resolved = file_path.resolve(strict=True)
-                    resolved.relative_to(root)
                 except (OSError, RuntimeError, ValueError):
+                    skipped_symlinks.add(relative_path(file_path, root))
+                    continue
+                if resolved_target_is_out_of_scope(
+                    resolved,
+                    root,
+                    excluded_paths,
+                    max_depth,
+                    include_vendored,
+                ):
                     skipped_symlinks.add(relative_path(file_path, root))
                     continue
                 if not resolved.is_file():
@@ -457,19 +643,33 @@ def walk_repository(
 
 
 def is_ci_path(relative: str) -> bool:
-    lowered = relative.casefold()
-    name = Path(relative).name.casefold()
+    path = Path(relative)
+    name = path.name.casefold()
+    parts = tuple(part.casefold() for part in path.parts)
+    suffix = path.suffix.casefold()
     return (
-        lowered.startswith(".github/workflows/")
-        or lowered.startswith(".circleci/")
-        or lowered.startswith(".buildkite/")
-        or name
-        in {
-            ".gitlab-ci.yml",
-            "azure-pipelines.yml",
-            "bitbucket-pipelines.yml",
-            "jenkinsfile",
-        }
+        (
+            len(parts) == 3
+            and parts[:2] == (".github", "workflows")
+            and suffix in {".yaml", ".yml"}
+        )
+        or (parts == (".circleci", "config.yml"))
+        or (parts == (".circleci", "config.yaml"))
+        or (
+            len(parts) >= 2
+            and parts[0] in {".buildkite", ".gitlab"}
+            and suffix in {".json", ".yaml", ".yml"}
+        )
+        or (
+            len(parts) == 1
+            and name
+            in {
+                ".gitlab-ci.yml",
+                "azure-pipelines.yml",
+                "bitbucket-pipelines.yml",
+                "jenkinsfile",
+            }
+        )
     )
 
 
@@ -505,17 +705,101 @@ def has_architecture_or_testing_signal(relative: str) -> bool:
     return bool(words & HIGH_SIGNAL_DOC_WORDS)
 
 
+def contains_path_pair(parts: tuple[str, ...], first: str, second: str) -> bool:
+    """Return whether two directory names occur consecutively in a path."""
+    return any(
+        parts[index : index + 2] == (first, second)
+        for index in range(len(parts) - 1)
+    )
+
+
 def instruction_kind(relative: str) -> str | None:
     path = Path(relative)
+    folded_parts = tuple(part.casefold() for part in path.parts)
+    if path.name == "AGENTS.md" and path.parent.name.casefold() == ".kimi":
+        return "kimi"
+    if path.name == "agents.md":
+        return "kimi"
     if path.name in INSTRUCTION_FILES:
         if path.name == "copilot-instructions.md" and ".github" not in path.parts:
             return None
+        if path.name == "REVIEW.md" and len(path.parts) != 1:
+            return None
         return INSTRUCTION_FILES[path.name]
-    if path.suffix.casefold() == ".mdc" and tuple(part.casefold() for part in path.parts[:2]) == (
-        ".cursor",
-        "rules",
+    if (
+        path.suffix.casefold() == ".md"
+        and len(folded_parts) >= 3
+        and folded_parts[:2] == (".claude", "rules")
+    ):
+        return "claude-rule"
+    if (
+        path.name.casefold().endswith(".instructions.md")
+        and len(folded_parts) >= 3
+        and folded_parts[:2] == (".github", "instructions")
+    ):
+        return "copilot-path"
+    if path.suffix.casefold() == ".mdc" and contains_path_pair(
+        folded_parts, ".cursor", "rules"
     ):
         return "cursor"
+    if path.suffix.casefold() == ".md" and contains_path_pair(
+        folded_parts, ".windsurf", "rules"
+    ):
+        return "windsurf-rule"
+    if (
+        path.name.casefold() == "bugbot.md"
+        and path.parent.name.casefold() == ".cursor"
+    ):
+        return "cursor-review"
+    return None
+
+
+def agent_definition_kind(relative: str) -> str | None:
+    path = Path(relative)
+    folded_parts = tuple(part.casefold() for part in path.parts)
+    if path.suffix.casefold() == ".md" and len(folded_parts) >= 3:
+        if folded_parts[:2] == (".claude", "agents"):
+            return "claude"
+        if folded_parts[:2] == (".gemini", "agents"):
+            return "gemini"
+    if (
+        path.suffix.casefold() == ".md"
+        and len(folded_parts) >= 3
+        and folded_parts[:2] == (".github", "agents")
+    ):
+        return "copilot"
+    return None
+
+
+def prompt_kind(relative: str) -> str | None:
+    path = Path(relative)
+    folded_parts = tuple(part.casefold() for part in path.parts)
+    if len(folded_parts) < 3:
+        return None
+    if path.suffix.casefold() == ".md" and folded_parts[:2] == (
+        ".claude",
+        "commands",
+    ):
+        return "claude"
+    if (
+        path.name.casefold().endswith(".prompt.md")
+        and folded_parts[:2] == (".github", "prompts")
+    ):
+        return "copilot"
+    if path.suffix.casefold() == ".toml" and folded_parts[:2] == (
+        ".gemini",
+        "commands",
+    ):
+        return "gemini"
+    if path.suffix.casefold() == ".md" and folded_parts[:2] == (
+        ".cursor",
+        "commands",
+    ):
+        return "cursor"
+    if path.suffix.casefold() == ".md" and contains_path_pair(
+        folded_parts, ".windsurf", "workflows"
+    ):
+        return "windsurf"
     return None
 
 
@@ -539,6 +823,7 @@ def is_agent_config(relative: str) -> bool:
         ".cursor",
         ".gemini",
         ".kimi",
+        ".windsurf",
         "agents",
     } and (
         path.name in AGENT_CONFIG_NAMES
@@ -604,6 +889,43 @@ def extract_markdown_target(raw_target: str) -> str | None:
     return target.split("#", 1)[0].split("?", 1)[0]
 
 
+def instruction_import_targets(text: str) -> list[str]:
+    """Collect direct @ tokens from rendered Markdown prose."""
+    targets: list[str] = []
+    for line in markdown_prose_lines(text):
+        for match in INSTRUCTION_IMPORT.finditer(line):
+            target = match.group(1).rstrip(".,;:!?)]}")
+            if target:
+                targets.append(target)
+    return targets
+
+
+def resolve_instruction_target(path: Path, target: str) -> Path:
+    normalized = target.replace("\\", os.sep)
+    if normalized == "~" or normalized.startswith(f"~{os.sep}"):
+        return Path(normalized).expanduser().resolve(strict=False)
+    candidate = Path(normalized)
+    if not candidate.is_absolute():
+        candidate = path.parent / candidate
+    return candidate.resolve(strict=False)
+
+
+def looks_like_instruction_import(target: str, candidate: Path) -> bool:
+    """Reject ordinary @mentions while retaining conservative path-like imports."""
+    normalized = target.replace("\\", "/")
+    if normalized.startswith(("./", "../", "~/", "/")):
+        return True
+    if re.match(r"^[A-Za-z]:/", normalized):
+        return True
+    try:
+        if candidate.exists():
+            return True
+    except OSError:
+        pass
+    leaf = normalized.rstrip("/").rsplit("/", 1)[-1]
+    return leaf not in {"", ".", ".."} and "." in leaf
+
+
 def summarize_instruction(path: Path, root: Path, kind: str) -> tuple[dict[str, Any], list[str]]:
     warnings: list[str] = []
     try:
@@ -616,23 +938,37 @@ def summarize_instruction(path: Path, root: Path, kind: str) -> tuple[dict[str, 
     headings: list[str] = []
     broken_links: list[str] = []
     outside_links: list[str] = []
+    imports: list[str] = []
+    broken_imports: list[str] = []
+    outside_imports: list[str] = []
     documented_commands: list[dict[str, Any]] = []
+    all_documented_commands: list[dict[str, Any]] = []
     line_count = 0
+    heading_count = 0
+    relative_link_target_count = 0
 
     if text is not None:
         line_count = len(text.splitlines())
-        documented_commands = documented_verification_commands(text)
-        for line in text.splitlines():
+        prose_lines = markdown_prose_lines(text)
+        prose_text = "\n".join(prose_lines)
+        documented_commands, all_documented_commands = documented_verification_commands(
+            text
+        )
+        for line in prose_lines:
             match = HEADING.match(line)
-            if match and len(headings) < 50:
-                headings.append(redact_sensitive_text(match.group(2).strip()))
-        for match in list(MARKDOWN_LINK.finditer(text))[:100]:
+            if match:
+                heading_count += 1
+                if len(headings) < MAX_INSTRUCTION_HEADINGS:
+                    headings.append(redact_sensitive_text(match.group(2).strip()))
+        link_matches = list(MARKDOWN_LINK.finditer(prose_text))
+        relative_link_target_count = len(link_matches)
+        for match in link_matches[:MAX_INSTRUCTION_REFERENCES]:
             target = extract_markdown_target(match.group(1))
             if not target:
                 continue
             try:
                 candidate = (path.parent / target).resolve(strict=False)
-            except (OSError, RuntimeError):
+            except (OSError, RuntimeError, ValueError):
                 broken_links.append(target)
                 continue
             try:
@@ -642,6 +978,25 @@ def summarize_instruction(path: Path, root: Path, kind: str) -> tuple[dict[str, 
                 continue
             if not candidate.exists():
                 broken_links.append(target)
+        if kind in {"shared", "claude", "gemini", "copilot"}:
+            for target in sorted(set(instruction_import_targets(text))):
+                try:
+                    candidate = resolve_instruction_target(path, target)
+                except (OSError, RuntimeError, ValueError):
+                    if target.startswith((".", "/", "~")) or "." in Path(target).name:
+                        imports.append(target)
+                        broken_imports.append(target)
+                    continue
+                if not looks_like_instruction_import(target, candidate):
+                    continue
+                imports.append(target)
+                try:
+                    candidate.relative_to(root)
+                except ValueError:
+                    outside_imports.append(target)
+                    continue
+                if not candidate.exists():
+                    broken_imports.append(target)
 
     return (
         {
@@ -652,8 +1007,28 @@ def summarize_instruction(path: Path, root: Path, kind: str) -> tuple[dict[str, 
             "symlink": path.is_symlink(),
             "headings": headings,
             "documented_verification_commands": documented_commands,
-            "broken_relative_links": sorted(set(broken_links))[:20],
-            "relative_links_outside_repository": sorted(set(outside_links))[:20],
+            "broken_relative_links": sorted(set(broken_links))[
+                :MAX_INSTRUCTION_LINK_RESULTS
+            ],
+            "relative_links_outside_repository": sorted(set(outside_links))[
+                :MAX_INSTRUCTION_LINK_RESULTS
+            ],
+            "imports": imports[:MAX_INSTRUCTION_REFERENCES],
+            "broken_imports": sorted(set(broken_imports))[
+                :MAX_INSTRUCTION_REFERENCES
+            ],
+            "imports_outside_repository": sorted(set(outside_imports))[
+                :MAX_INSTRUCTION_REFERENCES
+            ],
+            "headings_total": heading_count,
+            "documented_verification_commands_total": len(all_documented_commands),
+            "relative_link_targets_total": relative_link_target_count,
+            "broken_relative_links_total": len(set(broken_links)),
+            "relative_links_outside_repository_total": len(set(outside_links)),
+            "imports_total": len(imports),
+            "broken_imports_total": len(set(broken_imports)),
+            "imports_outside_repository_total": len(set(outside_imports)),
+            "_all_documented_verification_commands": all_documented_commands,
         },
         warnings,
     )
@@ -685,12 +1060,15 @@ def parse_package_scripts(
         for name, command in scripts.items()
         if isinstance(name, str) and isinstance(command, str)
     }
+    ordered_scripts = dict(sorted(clean_scripts.items()))
     return {
         "source": relative_path(path, root),
         "package_manager": detect_package_manager(
             path.parent, root, scanned_lockfiles
         ),
-        "scripts": dict(sorted(clean_scripts.items())[:100]),
+        "scripts": dict(list(ordered_scripts.items())[:MAX_MANIFEST_COMMANDS]),
+        "scripts_total": len(ordered_scripts),
+        "_all_scripts": ordered_scripts,
     }, None
 
 
@@ -746,7 +1124,7 @@ def parse_taskfile_targets(text: str) -> list[str]:
         if indent == target_indent:
             targets.add(match.group(1))
 
-    return sorted(targets)[:200]
+    return sorted(targets)
 
 
 def parse_task_targets(
@@ -769,13 +1147,15 @@ def parse_task_targets(
             match = pattern.match(line)
             if match and not match.group(1).startswith("."):
                 target_set.add(match.group(1))
-        targets = sorted(target_set)[:200]
+        targets = sorted(target_set)
     if not targets:
         return None, None
     return {
         "source": relative_path(path, root),
         "runner": runner,
-        "targets": targets,
+        "targets": targets[:MAX_TASK_TARGETS],
+        "targets_total": len(targets),
+        "_all_targets": targets,
     }, None
 
 
@@ -858,9 +1238,12 @@ def parse_python_scripts(path: Path, root: Path) -> tuple[dict[str, Any] | None,
 
     if not saw_scripts or not scripts:
         return None, None
+    ordered_scripts = dict(sorted(scripts.items()))
     return {
         "source": relative_path(path, root),
-        "scripts": dict(sorted(scripts.items())),
+        "scripts": dict(list(ordered_scripts.items())[:MAX_MANIFEST_COMMANDS]),
+        "scripts_total": len(ordered_scripts),
+        "_all_scripts": ordered_scripts,
     }, None
 
 
@@ -889,15 +1272,36 @@ def git_metadata(root: Path) -> dict[str, Any]:
     git_environment["GIT_OPTIONAL_LOCKS"] = "0"
     git_environment["GIT_TERMINAL_PROMPT"] = "0"
     git_environment["GIT_PAGER"] = "cat"
+    git_command = shutil.which("git", path=git_environment.get("PATH"))
+    git_discovery_failure: str | None = None
+    if git_command is None:
+        git_discovery_failure = "git_executable_unavailable"
+    else:
+        try:
+            resolved_git_command = Path(git_command).resolve(strict=True)
+            resolved_git_command.relative_to(root)
+        except ValueError:
+            git_command = str(resolved_git_command)
+        except (OSError, RuntimeError):
+            git_command = None
+            git_discovery_failure = "git_executable_unavailable"
+        else:
+            git_command = None
+            git_discovery_failure = "git_executable_inside_target"
 
     def run(
         *arguments: str,
     ) -> tuple[subprocess.CompletedProcess[str], str | None]:
+        if git_command is None:
+            return (
+                subprocess.CompletedProcess([], 127, "", git_discovery_failure or ""),
+                git_discovery_failure or "git_executable_unavailable",
+            )
         try:
             return (
                 subprocess.run(
                     [
-                        "git",
+                        git_command,
                         "-c",
                         "core.fsmonitor=false",
                         "-c",
@@ -1018,13 +1422,14 @@ def build_report(
     max_directories: int,
     max_depth: int,
     include_vendored: bool,
+    excluded_paths: list[Path],
 ) -> dict[str, Any]:
     (
         files,
         skipped,
         skipped_symlinks,
         skipped_special_files,
-        warnings,
+        walk_warnings,
         truncated,
         directories_seen,
         limit_reasons,
@@ -1034,88 +1439,241 @@ def build_report(
         max_directories,
         max_depth,
         include_vendored,
+        excluded_paths,
     )
+    warnings = list(walk_warnings)
+    verification_evidence_incomplete = False
     relatives = [relative_path(path, root) for path in files]
+    report_truncated_sections: list[dict[str, int | str]] = []
+
+    def record_report_limit(section: str, total: int, reported: int) -> None:
+        if total > reported:
+            report_truncated_sections.append(
+                {"path": section, "total": total, "reported": reported}
+            )
+
+    def cap_paths(
+        values: Iterable[str], section: str, limit: int = MAX_REPORTED_PATHS
+    ) -> list[str]:
+        ordered = sorted(set(values))
+        reported = ordered[:limit]
+        record_report_limit(section, len(ordered), len(reported))
+        return reported
+
     language_counts = Counter(
         language
         for path in files
         if (language := LANGUAGE_EXTENSIONS.get(path.suffix.casefold())) is not None
     )
 
-    manifests = capped(
-        relative for relative in relatives if Path(relative).name in MANIFEST_NAMES
+    all_manifests = sorted(
+        {
+            relative
+            for relative in relatives
+            if Path(relative).name in MANIFEST_NAMES
+        }
     )
+    manifests = cap_paths(all_manifests, "project.manifests")
     all_lockfiles = [
         relative for relative in relatives if Path(relative).name in LOCKFILE_NAMES
     ]
-    lockfiles = capped(all_lockfiles)
-    task_runners = capped(
-        relative for relative in relatives if Path(relative).name in TASK_RUNNER_NAMES
+    lockfiles = cap_paths(all_lockfiles, "project.lockfiles")
+    all_task_runners = sorted(
+        {
+            relative
+            for relative in relatives
+            if Path(relative).name in TASK_RUNNER_NAMES
+        }
     )
-    ci_files = capped(relative for relative in relatives if is_ci_path(relative))
-    quality_configs = capped(
-        relative
-        for relative in relatives
-        if Path(relative).name in QUALITY_CONFIG_NAMES
+    task_runners = cap_paths(all_task_runners, "project.task_runners")
+    all_ci_files = [relative for relative in relatives if is_ci_path(relative)]
+    ci_files = cap_paths(all_ci_files, "automation.ci_files")
+    quality_configs = cap_paths(
+        (
+            relative
+            for relative in relatives
+            if Path(relative).name in QUALITY_CONFIG_NAMES
+        ),
+        "automation.quality_configs",
     )
     all_high_signal_docs = [
         relative for relative in relatives if is_high_signal_doc(relative)
     ]
-    docs = capped(all_high_signal_docs)
-    test_paths = capped(relative for relative in relatives if is_test_path(relative))
-    skills = capped(relative for relative in relatives if is_skill_path(relative))
-    agent_configs = capped(relative for relative in relatives if is_agent_config(relative))
+    docs = cap_paths(all_high_signal_docs, "documentation.high_signal_files")
+    test_paths = cap_paths(
+        (relative for relative in relatives if is_test_path(relative)),
+        "verification.test_paths",
+    )
+    skills = cap_paths(
+        (relative for relative in relatives if is_skill_path(relative)),
+        "agent_surface.skills",
+    )
+    all_agent_definitions = sorted(
+        (
+            {"path": relative, "kind": kind}
+            for relative in relatives
+            if (kind := agent_definition_kind(relative)) is not None
+        ),
+        key=lambda item: item["path"],
+    )
+    agent_definitions = all_agent_definitions[:MAX_REPORTED_PATHS]
+    record_report_limit(
+        "agent_surface.agent_definitions",
+        len(all_agent_definitions),
+        len(agent_definitions),
+    )
+    all_prompts = sorted(
+        (
+            {"path": relative, "kind": kind}
+            for relative in relatives
+            if (kind := prompt_kind(relative)) is not None
+        ),
+        key=lambda item: item["path"],
+    )
+    prompts = all_prompts[:MAX_REPORTED_PATHS]
+    record_report_limit("agent_surface.prompts", len(all_prompts), len(prompts))
+    agent_configs = cap_paths(
+        (
+            relative
+            for relative in relatives
+            if is_agent_config(relative)
+            and instruction_kind(relative) is None
+            and agent_definition_kind(relative) is None
+            and prompt_kind(relative) is None
+        ),
+        "agent_surface.config",
+    )
 
     instruction_summaries: list[dict[str, Any]] = []
-    for path, relative in zip(files, relatives):
-        kind = instruction_kind(relative)
-        if kind is None:
-            continue
+    instruction_candidates = sorted(
+        (
+            (path, relative, kind)
+            for path, relative in zip(files, relatives)
+            if (kind := instruction_kind(relative)) is not None
+        ),
+        key=lambda item: (
+            len(Path(item[1]).parts),
+            portable_name_key(item[1]),
+        ),
+    )
+    record_report_limit(
+        "agent_surface.instructions",
+        len(instruction_candidates),
+        min(len(instruction_candidates), MAX_REPORTED_PATHS),
+    )
+    for path, relative, kind in instruction_candidates[:MAX_REPORTED_PATHS]:
         summary, summary_warnings = summarize_instruction(path, root, kind)
         instruction_summaries.append(summary)
         warnings.extend(summary_warnings)
+        verification_evidence_incomplete = (
+            verification_evidence_incomplete or bool(summary_warnings)
+        )
+        for field, total_field in (
+            ("headings", "headings_total"),
+            (
+                "documented_verification_commands",
+                "documented_verification_commands_total",
+            ),
+            ("relative_link_targets_inspected", "relative_link_targets_total"),
+            ("broken_relative_links", "broken_relative_links_total"),
+            (
+                "relative_links_outside_repository",
+                "relative_links_outside_repository_total",
+            ),
+            ("imports", "imports_total"),
+            ("broken_imports", "broken_imports_total"),
+            ("imports_outside_repository", "imports_outside_repository_total"),
+        ):
+            reported = (
+                min(summary[total_field], MAX_INSTRUCTION_REFERENCES)
+                if field == "relative_link_targets_inspected"
+                else len(summary[field])
+            )
+            record_report_limit(
+                f"agent_surface.instructions[{relative}].{field}",
+                summary[total_field],
+                reported,
+            )
     instruction_summaries.sort(key=lambda item: item["path"])
 
     package_scripts: list[dict[str, Any]] = []
     python_scripts: list[dict[str, Any]] = []
     task_targets: list[dict[str, Any]] = []
     path_by_relative = dict(zip(relatives, files))
-    for relative in manifests:
+    package_manifest_candidates = [
+        relative for relative in all_manifests if Path(relative).name == "package.json"
+    ]
+    python_manifest_candidates = [
+        relative for relative in all_manifests if Path(relative).name == "pyproject.toml"
+    ]
+    record_report_limit(
+        "verification.package_script_manifests_inspected",
+        len(package_manifest_candidates),
+        min(len(package_manifest_candidates), MAX_PARSED_MANIFESTS),
+    )
+    record_report_limit(
+        "verification.python_entrypoint_manifests_inspected",
+        len(python_manifest_candidates),
+        min(len(python_manifest_candidates), MAX_PARSED_MANIFESTS),
+    )
+    record_report_limit(
+        "verification.task_runner_files_inspected",
+        len(all_task_runners),
+        min(len(all_task_runners), MAX_PARSED_MANIFESTS),
+    )
+    for relative in package_manifest_candidates[:MAX_PARSED_MANIFESTS]:
         path = path_by_relative[relative]
-        if path.name == "package.json" and len(package_scripts) < 50:
-            parsed, warning = parse_package_scripts(path, root, set(all_lockfiles))
-            if parsed:
-                package_scripts.append(parsed)
-            if warning:
-                warnings.append(warning)
-        elif path.name == "pyproject.toml" and len(python_scripts) < 50:
-            parsed, warning = parse_python_scripts(path, root)
-            if parsed:
-                python_scripts.append(parsed)
-            if warning:
-                warnings.append(warning)
-    for relative in task_runners[:50]:
+        parsed, warning = parse_package_scripts(path, root, set(all_lockfiles))
+        if parsed:
+            package_scripts.append(parsed)
+            record_report_limit(
+                f"verification.package_scripts[{relative}].scripts",
+                parsed["scripts_total"],
+                len(parsed["scripts"]),
+            )
+        if warning:
+            warnings.append(warning)
+            verification_evidence_incomplete = True
+    for relative in python_manifest_candidates[:MAX_PARSED_MANIFESTS]:
+        parsed, warning = parse_python_scripts(path_by_relative[relative], root)
+        if parsed:
+            python_scripts.append(parsed)
+            record_report_limit(
+                f"verification.python_entrypoints[{relative}].scripts",
+                parsed["scripts_total"],
+                len(parsed["scripts"]),
+            )
+        if warning:
+            warnings.append(warning)
+            verification_evidence_incomplete = True
+    for relative in all_task_runners[:MAX_PARSED_MANIFESTS]:
         parsed, warning = parse_task_targets(path_by_relative[relative], root)
         if parsed:
             task_targets.append(parsed)
+            record_report_limit(
+                f"verification.task_targets[{relative}].targets",
+                parsed["targets_total"],
+                len(parsed["targets"]),
+            )
         if warning:
             warnings.append(warning)
+            verification_evidence_incomplete = True
 
     verification_commands: list[dict[str, str]] = []
     for package in package_scripts:
-        for name, command in package["scripts"].items():
+        for name, command in package["_all_scripts"].items():
             if VERIFICATION_NAME.search(name):
                 verification_commands.append(
                     {"source": package["source"], "name": name, "definition": command}
                 )
     for runner in task_targets:
-        for target in runner["targets"]:
+        for target in runner["_all_targets"]:
             if VERIFICATION_NAME.search(target):
                 verification_commands.append(
                     {"source": runner["source"], "name": target, "definition": runner["runner"]}
                 )
     for instruction in instruction_summaries:
-        for command in instruction["documented_verification_commands"]:
+        for command in instruction["_all_documented_verification_commands"]:
             verification_commands.append(
                 {
                     "source": instruction["path"],
@@ -1123,20 +1681,107 @@ def build_report(
                     "definition": command["definition"],
                 }
             )
-    verification_commands = verification_commands[:250]
+    for package in package_scripts:
+        package.pop("_all_scripts", None)
+    for entrypoint in python_scripts:
+        entrypoint.pop("_all_scripts", None)
+    for runner in task_targets:
+        runner.pop("_all_targets", None)
+    for instruction in instruction_summaries:
+        instruction.pop("_all_documented_verification_commands", None)
+    all_verification_commands = verification_commands
+    verification_commands = all_verification_commands[:MAX_DECLARED_COMMANDS]
+    record_report_limit(
+        "verification.declared_commands",
+        len(all_verification_commands),
+        len(verification_commands),
+    )
 
     root_instructions = [
-        item for item in instruction_summaries if "/" not in item["path"]
+        item
+        for item in instruction_summaries
+        if (
+            "/" not in item["path"]
+            or item["path"].casefold() == ".kimi/agents.md"
+        )
+        and item["kind"] != "claude-review"
     ]
     broken_link_count = sum(
         len(item["broken_relative_links"]) for item in instruction_summaries
     )
+    broken_import_count = sum(
+        len(item["broken_imports"]) for item in instruction_summaries
+    )
+    outside_import_count = sum(
+        len(item["imports_outside_repository"]) for item in instruction_summaries
+    )
     version_control = git_metadata(root)
+    top_level: list[str] = []
+    try:
+        excluded_identities = {
+            identity
+            for excluded in excluded_paths
+            if (identity := path_identity(excluded)) is not None
+        }
+        all_top_level = sorted(
+            (
+                entry.name
+                for entry in root.iterdir()
+                if not path_is_excluded(entry, excluded_identities)
+            ),
+            key=portable_name_key,
+        )
+        top_level = all_top_level[:MAX_REPORTED_PATHS]
+        record_report_limit(
+            "project.top_level_entries", len(all_top_level), len(top_level)
+        )
+    except OSError as error:
+        warnings.append(f"Unable to list repository root: {error}")
+
+    all_languages = [
+        {"name": name, "files": count}
+        for name, count in language_counts.most_common()
+    ]
+    languages = all_languages[:MAX_REPORTED_LANGUAGES]
+    record_report_limit("project.languages", len(all_languages), len(languages))
+
+    skipped_directories = skipped[:MAX_REPORTED_PATHS]
+    reported_skipped_symlinks = skipped_symlinks[:MAX_REPORTED_PATHS]
+    reported_skipped_special_files = skipped_special_files[:MAX_REPORTED_PATHS]
+    record_report_limit(
+        "scan.skipped_directories", len(skipped), len(skipped_directories)
+    )
+    record_report_limit(
+        "scan.skipped_symlinks",
+        len(skipped_symlinks),
+        len(reported_skipped_symlinks),
+    )
+    record_report_limit(
+        "scan.skipped_special_files",
+        len(skipped_special_files),
+        len(reported_skipped_special_files),
+    )
+
+    warning_values = sorted(set(warnings))
+    reported_warnings = warning_values[:MAX_REPORTED_WARNINGS]
+    record_report_limit("scan.warnings", len(warning_values), len(reported_warnings))
+
     diagnostics: list[str] = []
+    traversal_detection_incomplete = bool(limit_reasons or walk_warnings)
     if not files:
-        diagnostics.append("empty_repository")
-    if not instruction_summaries:
-        diagnostics.append("no_agent_instruction_surface_detected")
+        diagnostics.append(
+            "repository_inventory_incomplete"
+            if traversal_detection_incomplete
+            else "empty_repository"
+        )
+    if not instruction_candidates:
+        diagnostics.append(
+            "agent_instruction_surface_detection_incomplete"
+            if traversal_detection_incomplete
+            else "no_agent_instruction_surface_detected"
+        )
+    elif not root_instructions:
+        diagnostics.append("no_root_instruction_entrypoint_detected")
     elif not any(item["kind"] == "shared" for item in root_instructions):
         diagnostics.append("provider_specific_root_instructions_only")
     if len(root_instructions) > 1:
@@ -1145,32 +1790,63 @@ def build_report(
         diagnostics.append("large_root_instruction_file_may_need_routing")
     if broken_link_count:
         diagnostics.append("broken_relative_links_in_agent_instructions")
-    if not verification_commands:
-        diagnostics.append("no_declared_verification_command_detected")
-    if not ci_files:
-        diagnostics.append("no_ci_configuration_detected")
+    if broken_import_count:
+        diagnostics.append("broken_imports_in_agent_instructions")
+    if outside_import_count:
+        diagnostics.append("instruction_imports_outside_repository")
+    verification_detection_incomplete = (
+        traversal_detection_incomplete
+        or verification_evidence_incomplete
+        or any(
+            item["path"]
+            in {
+                "agent_surface.instructions",
+                "verification.package_script_manifests_inspected",
+                "verification.python_entrypoint_manifests_inspected",
+                "verification.task_runner_files_inspected",
+            }
+            or item["path"].endswith(
+                (
+                    ".documented_verification_commands",
+                    ".scripts",
+                    ".targets",
+                )
+            )
+            for item in report_truncated_sections
+        )
+    )
+    if not all_verification_commands:
+        diagnostics.append(
+            "declared_verification_command_detection_incomplete"
+            if verification_detection_incomplete
+            else "no_declared_verification_command_detected"
+        )
+    if not all_ci_files:
+        diagnostics.append(
+            "ci_configuration_detection_incomplete"
+            if traversal_detection_incomplete
+            else "no_ci_configuration_detected"
+        )
     if len(files) >= 100 and not any(
         has_architecture_or_testing_signal(path) for path in all_high_signal_docs
     ):
-        diagnostics.append("no_high_signal_architecture_or_testing_doc_detected")
+        diagnostics.append(
+            "high_signal_architecture_or_testing_doc_detection_incomplete"
+            if traversal_detection_incomplete
+            else "no_high_signal_architecture_or_testing_doc_detected"
+        )
     if "max_files" in limit_reasons:
         diagnostics.append("scan_truncated_at_file_limit")
     if "max_directories" in limit_reasons:
         diagnostics.append("scan_truncated_at_directory_limit")
     if "max_depth" in limit_reasons:
         diagnostics.append("scan_truncated_at_depth_limit")
+    if report_truncated_sections:
+        diagnostics.append("report_fields_truncated")
     if version_control.get("worktree_state") == "unverified":
         diagnostics.append("git_worktree_state_unverified")
     if version_control.get("repository_state") == "unverified":
         diagnostics.append("git_repository_identity_unverified")
-
-    top_level = []
-    try:
-        top_level = sorted(
-            (entry.name for entry in root.iterdir()), key=portable_name_key
-        )[:200]
-    except OSError as error:
-        warnings.append(f"Unable to list repository root: {error}")
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1183,21 +1859,37 @@ def build_report(
             "max_directories": max_directories,
             "max_depth": max_depth,
             "truncated": truncated,
+            "traversal_incomplete": traversal_detection_incomplete,
             "limit_reasons": limit_reasons,
+            "report_truncated": bool(report_truncated_sections),
+            "report_truncated_sections": report_truncated_sections,
+            "report_limits": {
+                "max_reported_paths": MAX_REPORTED_PATHS,
+                "max_reported_warnings": MAX_REPORTED_WARNINGS,
+                "max_parsed_manifests": MAX_PARSED_MANIFESTS,
+                "max_declared_commands": MAX_DECLARED_COMMANDS,
+                "max_reported_languages": MAX_REPORTED_LANGUAGES,
+                "max_instruction_headings": MAX_INSTRUCTION_HEADINGS,
+                "max_instruction_references": MAX_INSTRUCTION_REFERENCES,
+                "max_instruction_link_results": MAX_INSTRUCTION_LINK_RESULTS,
+                "max_documented_commands_per_instruction": MAX_DOCUMENTED_COMMANDS_PER_INSTRUCTION,
+                "max_manifest_commands": MAX_MANIFEST_COMMANDS,
+                "max_task_targets": MAX_TASK_TARGETS,
+            },
             "include_vendored": include_vendored,
-            "skipped_directories": skipped[:MAX_REPORTED_PATHS],
-            "skipped_symlinks": skipped_symlinks[:MAX_REPORTED_PATHS],
-            "skipped_special_files": skipped_special_files[:MAX_REPORTED_PATHS],
-            "warnings": sorted(set(warnings))[:100],
+            "excluded_paths": [
+                relative_path(path, root) for path in excluded_paths
+            ],
+            "skipped_directories": skipped_directories,
+            "skipped_symlinks": reported_skipped_symlinks,
+            "skipped_special_files": reported_skipped_special_files,
+            "warnings": reported_warnings,
         },
         "version_control": version_control,
         "project": {
             "top_level_entries": top_level,
-            "ecosystems": ecosystems_for(manifests),
-            "languages": [
-                {"name": name, "files": count}
-                for name, count in language_counts.most_common(20)
-            ],
+            "ecosystems": ecosystems_for(all_manifests),
+            "languages": languages,
             "manifests": manifests,
             "lockfiles": lockfiles,
             "task_runners": task_runners,
@@ -1205,6 +1897,8 @@ def build_report(
         "agent_surface": {
             "instructions": instruction_summaries,
             "skills": skills,
+            "agent_definitions": agent_definitions,
+            "prompts": prompts,
             "config": agent_configs,
         },
         "documentation": {"high_signal_files": docs},
@@ -1223,6 +1917,22 @@ def build_report(
     }
 
 
+def markdown_code(value: Any) -> str:
+    """Render untrusted report text as one safe Markdown code span."""
+    escaped = "".join(
+        f"\\u{ord(character):04x}"
+        if character == "`" or ord(character) < 32 or ord(character) == 127
+        else character
+        for character in str(value)
+    )
+    return f"`{escaped}`"
+
+
+def markdown_code_list(values: Iterable[Any]) -> str:
+    rendered = [markdown_code(value) for value in values]
+    return ", ".join(rendered) if rendered else "none"
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     project = report["project"]
     agent_surface = report["agent_surface"]
@@ -1231,12 +1941,36 @@ def render_markdown(report: dict[str, Any]) -> str:
     repository_display = (
         "Unverified" if is_repository is None else str(is_repository)
     )
+    traversal_incomplete = report["scan"]["traversal_incomplete"]
+    instruction_detection_incomplete = (
+        "agent_instruction_surface_detection_incomplete"
+        in report["diagnostic_hints"]
+    )
+    verification_detection_incomplete = (
+        "declared_verification_command_detection_incomplete"
+        in report["diagnostic_hints"]
+    )
+    ecosystems_display = ", ".join(project["ecosystems"])
+    if not ecosystems_display:
+        ecosystems_display = (
+            "unverified (traversal incomplete)"
+            if traversal_incomplete
+            else "none detected"
+        )
     lines = [
         "# Agentize Skill repository inventory",
         "",
-        f"- Root: `{report['root']}`",
+        f"- Root: {markdown_code(report['root'])}",
         f"- Files scanned: {report['scan']['files_seen']}",
-        f"- Ecosystems: {', '.join(project['ecosystems']) or 'none detected'}",
+        "- Traversal truncated: "
+        f"{report['scan']['truncated']}"
+        f" ({', '.join(report['scan']['limit_reasons']) or 'no limit reached'})",
+        f"- Traversal incomplete: {report['scan']['traversal_incomplete']}",
+        "- Report fields truncated: "
+        f"{markdown_code_list(item['path'] for item in report['scan']['report_truncated_sections'])}",
+        "- Excluded paths: "
+        f"{markdown_code_list(report['scan']['excluded_paths'])}",
+        f"- Ecosystems: {ecosystems_display}",
         f"- Git repository: {repository_display}",
         "- Git worktree state: "
         f"{report['version_control'].get('worktree_state', 'unverified')}",
@@ -1249,39 +1983,58 @@ def render_markdown(report: dict[str, Any]) -> str:
             details = f"{instruction['lines']} lines, {instruction['kind']}"
             if instruction["broken_relative_links"]:
                 details += f", {len(instruction['broken_relative_links'])} broken link(s)"
-            lines.append(f"- `{instruction['path']}` ({details})")
+            if instruction["broken_imports"]:
+                details += f", {len(instruction['broken_imports'])} broken import(s)"
+            lines.append(f"- {markdown_code(instruction['path'])} ({details})")
     else:
-        lines.append("- No recognized instruction file detected.")
+        lines.append(
+            "- No recognized instruction file detected in the scanned files; "
+            "detection was incomplete."
+            if instruction_detection_incomplete
+            else "- No recognized instruction file detected."
+        )
 
     lines.extend(["", "## Verification signals", ""])
     if verification["declared_commands"]:
         for command in verification["declared_commands"][:40]:
             lines.append(
-                f"- `{command['name']}` from `{command['source']}`: "
-                f"`{command['definition']}`"
+                f"- {markdown_code(command['name'])} from "
+                f"{markdown_code(command['source'])}: "
+                f"{markdown_code(command['definition'])}"
             )
     else:
-        lines.append("- No declared verification command detected.")
+        lines.append(
+            "- Declared verification-command detection is incomplete."
+            if verification_detection_incomplete
+            else "- No declared verification command detected."
+        )
 
     lines.extend(["", "## Other evidence", ""])
     lines.append(
-        f"- Skills: {len(agent_surface['skills'])}; CI files: "
+        f"- Skills: {len(agent_surface['skills'])}; agent definitions: "
+        f"{len(agent_surface['agent_definitions'])}; prompts: "
+        f"{len(agent_surface['prompts'])}; CI files: "
         f"{len(report['automation']['ci_files'])}; test paths: "
         f"{len(verification['test_paths'])}"
     )
     lines.append(
-        f"- High-signal docs: {', '.join(report['documentation']['high_signal_files'][:20]) or 'none'}"
+        "- High-signal docs: "
+        f"{markdown_code_list(report['documentation']['high_signal_files'][:20])}"
     )
 
     lines.extend(["", "## Diagnostic hints", ""])
     if report["diagnostic_hints"]:
-        lines.extend(f"- `{hint}`" for hint in report["diagnostic_hints"])
+        lines.extend(
+            f"- {markdown_code(hint)}" for hint in report["diagnostic_hints"]
+        )
     else:
         lines.append("- No automatic hints. Human assessment is still required.")
 
     if report["scan"]["warnings"]:
         lines.extend(["", "## Scanner warnings", ""])
-        lines.extend(f"- {warning}" for warning in report["scan"]["warnings"])
+        lines.extend(
+            f"- {markdown_code(warning)}" for warning in report["scan"]["warnings"]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -1322,7 +2075,35 @@ def parse_arguments(arguments: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Include vendor and third_party directories in the bounded scan.",
     )
+    parser.add_argument(
+        "--exclude-path",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "Exclude one exact file or directory inside the repository. "
+            "Relative paths are resolved from --root; repeat as needed."
+        ),
+    )
     return parser.parse_args(arguments)
+
+
+def declares_agentize_skill(package: Path) -> bool:
+    """Recognize this skill package before applying automatic self-exclusion."""
+    text, warning = read_text(package / "SKILL.md", package, max_bytes=32_000)
+    if warning or text is None:
+        return False
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return False
+    for line in lines[1:101]:
+        if line.strip() == "---":
+            return False
+        match = re.fullmatch(r"\s*name\s*:\s*(.*?)\s*", line)
+        if match:
+            value = match.group(1).strip().strip("'\"")
+            return value == "agentize-skill"
+    return False
 
 
 def main(arguments: list[str] | None = None) -> int:
@@ -1340,12 +2121,27 @@ def main(arguments: list[str] | None = None) -> int:
     if not root.is_dir():
         print(f"Repository root is not a directory: {root}", file=sys.stderr)
         return 2
+    requested_exclusions = list(options.exclude_path)
+    scanner_package = Path(__file__).resolve().parents[1]
+    try:
+        scanner_package.relative_to(root)
+    except ValueError:
+        pass
+    else:
+        if scanner_package != root and declares_agentize_skill(scanner_package):
+            requested_exclusions.append(str(scanner_package))
+    try:
+        excluded_paths = normalize_excluded_paths(root, requested_exclusions)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
     report = build_report(
         root,
         options.max_files,
         options.max_directories,
         options.max_depth,
         options.include_vendored,
+        excluded_paths,
     )
     if options.format == "markdown":
         print(render_markdown(report), end="")

@@ -4,8 +4,9 @@ Use existing names and locations when they already have clear ownership. The
 patterns below are options, not a scaffold to generate in every repository.
 The goal is a repository-owned AI development harness, not a collection of
 Markdown files. The responsibility and transition rules behind planning, Agent
-Verification, Human Local Acceptance, MR/PR review, delivery, and learning are defined
-in [delivery-workflow.md](delivery-workflow.md).
+Verification, independent technical review, Human Local Acceptance, MR/PR review,
+delivery, and learning are defined in
+[delivery-workflow.md](delivery-workflow.md).
 
 ## Scope boundary
 
@@ -15,6 +16,16 @@ the requested agent-ready outcome; do not require the user to select an internal
 mode. A new tool or automation surface must solve a consequential demonstrated
 gap, be proportionate to the repository, and remain within normal permission and
 external-action boundaries.
+
+The active Agentize Skill package is bootstrap tooling, not evidence about the
+target project. Exclude its exact directory from inventory when it is installed
+inside the target. Unless the user separately asks to maintain that installation
+as a project asset, do not edit `.gitignore`, formatter, Lint, typecheck, test,
+build, package, or CI configuration solely to accommodate, hide, or validate its
+files. If a repository-local copy interferes with target checks, disclose the
+interference and recommend a user-scoped installation; move or remove it only
+with the required authority. Every durable target change must remain useful
+after Agentize Skill is absent.
 
 ## Root instruction source
 
@@ -54,10 +65,11 @@ The contract should state, in project terms:
 - where goal, constraints, success criteria, acceptance criteria, risk, and
   unknowns live;
 - which targeted and broad checks make up Agent Verification;
-- how Local Fast Verification, Targeted Runtime Verification, and Human Local
-  Acceptance interact before a change becomes Ready for Review;
-- how Draft versus Ready MR/PR, independent AI review where available, MR/PR CI,
-  risk-based technical review, and conditional preview or staging acceptance interact;
+- how Local Fast Verification, Targeted Runtime Verification, independent
+  pre-acceptance review, and Human Local Acceptance interact before a change
+  becomes Ready for Review;
+- how Draft versus Ready MR/PR, platform AI review where configured, MR/PR CI,
+  risk-based Human Technical Review, and conditional preview or staging acceptance interact;
 - where E2E runs based on cost and risk, what revision it proves, and whether it
   blocks MR/PR, test/staging promotion, a scheduled regression owner, or release;
 - how Continuous Knowledge Capture updates the current change;
@@ -97,14 +109,24 @@ records:
 - the event that should cause this row to be reevaluated.
 
 At minimum assess Planning/Human Plan Review, Local Fast Verification, Unit and
-Integration tests, each applicable Targeted Runtime Verification surface, Human
-Local Acceptance, Draft/Ready MR/PR handling, AI Code Review, MR/PR CI, full E2E
-and its placement policy, Continuous Knowledge Capture, whether optional automatic
-Post-Merge Knowledge Audit is configured, observability for operated services,
-and architecture enforcement when material.
+Integration tests, each applicable Targeted Runtime Verification surface,
+independent pre-acceptance technical review, Human Local Acceptance, Draft/Ready
+MR/PR handling, platform AI review, MR/PR CI, full E2E and its placement policy,
+Continuous Knowledge Capture, whether optional automatic Post-Merge Knowledge
+Audit is configured, observability for operated services, and architecture
+enforcement when material.
 Assess preview or staging acceptance only when the repository or its risk model
 makes it relevant. Add or omit other rows based on the repository; use
 `NOT APPLICABLE` rather than hiding a stage that direct evidence excludes.
+
+Name a test capability only when repository evidence supports that exact
+category. A dedicated suite, task, project, CI job, or representative test
+inspection may prove `Unit`, `Integration`, `Package`, `Fault`, or `PTY`; a test
+filename, broad `test` command, or integration-style case inside a unit project
+does not justify inventing a separate `Integration tests: READY` row. When the
+repository does not distinguish categories, report the verified aggregate test
+scope and leave narrower categories `UNVERIFIED`, `NOT CONFIGURED`, or
+`NOT APPLICABLE` as the evidence requires.
 
 A useful shape is:
 
@@ -112,6 +134,8 @@ A useful shape is:
 | --- | --- | --- | --- |
 | Local Fast Verification | `READY` | Exact repository-owned command verified locally. | None. |
 | Targeted Runtime Verification (Web/UI) | `SETUP REQUIRED` | Safe app start exists; no approved test identity. | Configure the linked test-account setup; use named Human manual exercise before acceptance meanwhile. |
+| Independent pre-acceptance review | `PARTIAL` | Fresh-context review was verified in one named host; other supported hosts were not verified. | Use labeled implementer self-review elsewhere; require Human Technical Review for named high-risk work. |
+| Platform AI review | `NOT CONFIGURED` | No remote Reviewer Agent path has been selected. | MR/PR CI and risk-based Human Technical Review remain the platform gates. |
 | Full E2E (scheduled and pre-release) | `READY` | Exact suite, environment, nightly trigger, and release-candidate gate were verified for their named scopes. | Not a per-MR/PR gate; current changes report `NOT EXECUTED` plus the next trigger and confidence consequence. |
 | Automatic Post-Merge Audit | `UNVERIFIED` | Workflow file exists; merge trigger and write permissions were not safely exercised. | Follow the linked verification guide; do not describe it as enabled. |
 
@@ -127,6 +151,33 @@ The report is repository-owned after bootstrap. Future Agents update the affecte
 row when a prerequisite, host, platform, command, permission, or representative
 verification changes; they do not wait for Agentize Skill to be run again. Keep stable
 evidence and reevaluation rules rather than volatile status theater.
+
+### Artifact delivery and platform activation
+
+Operational status does not say whether a newly created artifact has left the
+current worktree. For every changed instruction, document, template, script, CI
+definition, or other platform-facing artifact that affects a readiness claim,
+record the highest repository-delivery state supported by direct evidence:
+
+| Delivery evidence | Meaning |
+| --- | --- |
+| `WORKTREE ONLY` | The content exists locally, including staged content, but is not proven in a commit. |
+| `COMMITTED` | The content is present in a named local commit. |
+| `PUSHED` | The named commit is present on the intended remote ref. |
+
+These three labels are a repository-delivery ladder, not capability statuses or
+task outcomes. Record platform activation separately as `PLATFORM ACTIVE` only
+when the forge, runner, or external governance surface is proven to consume the
+named revision in the claimed scope. Record the relevant path, revision, ref,
+platform, and scope rather than assuming either dimension. A worktree-only PR
+template is not active on GitHub; a pushed CI file is not a required merge gate
+without runner and branch/ruleset evidence. Platform activation of an older
+revision does not activate newer worktree content.
+Never commit, push, create or update an MR/PR, or change platform settings unless
+the user authorized that external state change. If the bootstrap stops at
+`WORKTREE ONLY`, state that future clones, Agents, CI, and repository-platform
+features do not receive the change until the repository owner commits and pushes
+it through the normal workflow.
 
 ## Setup guides and human-owned TODOs
 
@@ -209,13 +260,15 @@ Use the stage and evidence rules in [delivery-workflow.md](delivery-workflow.md#
 
 For every non-obvious Local Fast, Targeted Runtime, MR/PR CI, or E2E path, record the exact command or actions, working directory, scope, prerequisites, safe environment and data, reset or isolation, what it proves, expected cost or duration, meaningful exclusions, and result owner. Runtime guidance also preserves the [runtime evidence chain](delivery-workflow.md#runtime-evidence-chain). The E2E policy names the suite, trigger or cadence, tested revision or candidate, environment and data, reliability exclusions, blocking target, and failure route.
 
-Keep implementing-Agent evidence, runtime evidence, independent review, CI or policy gates, and Human Acceptance as separate fields in the repository's existing handoff surface. Missing prerequisites route to the Capability Report and a Setup Guide or recommendation; they do not produce a fabricated command. If a reliable command is repeatedly assembled by hand, add a tested script or task-runner target. Do not duplicate an already stable pipeline merely to add another interface.
+Keep implementing-Agent evidence, runtime evidence, independent pre-acceptance review, platform AI review, CI or policy gates, and Human Acceptance as separate fields in the repository's existing handoff surface. Missing prerequisites route to the Capability Report and a Setup Guide or recommendation; they do not produce a fabricated command. If a reliable command is repeatedly assembled by hand, add a tested script or task-runner target. Do not duplicate an already stable pipeline merely to add another interface.
+
+When independent pre-acceptance review applies, make its risk trigger, fresh-context boundary, authoritative review packet, default no-edit role, finding and provenance fields, revision binding, repair loop, and fallback discoverable. Reuse a verified host review command, subagent convention, or existing review guide. Do not create a repository-local Reviewer Skill or prompt merely to make the stage appear configured; instructions without an available fresh-context execution path remain advisory.
 
 ## MR/PR review and CI
 
-For reviewed-branch repositories, adapt the existing MR/PR template, contribution guide, review automation, and CI. Make Draft versus Ready explicit, and let the Ready handoff carry the goal and Acceptance Criteria, accepted plan, deviations, risks, Agent evidence and exclusions, Human Local Acceptance, and any conditional preview or staging decision.
+For reviewed-branch repositories, adapt the existing MR/PR template, contribution guide, review automation, and CI. Make Draft versus Ready explicit, and let the Ready handoff carry the goal and Acceptance Criteria, accepted plan, deviations, risks, Agent evidence and exclusions, independent pre-acceptance review and its disposition or fallback, Human Local Acceptance, and any conditional preview or staging decision.
 
-Keep required-gate ownership in the existing CI or policy source and apply the [required-gate accounting](delivery-workflow.md#required-gate-accounting) contract. Add a machine-readable gate inventory or aggregate only when direct evidence shows duplicated definitions, drift, or false-green risk. Record independent Reviewer Agent configuration only after its runner, trigger, context, permissions, and failure behavior are verified; never choose a model provider merely to fill the field.
+Keep required-gate ownership in the existing CI or policy source and apply the [required-gate accounting](delivery-workflow.md#required-gate-accounting) contract. Add a machine-readable gate inventory or aggregate only when direct evidence shows duplicated definitions, drift, or false-green risk. Record platform Reviewer Agent configuration only after its runner, trigger, exact revision and context access, permissions, cost, and failure behavior are verified; never choose a model provider merely to fill the field.
 
 Reuse real human technical-review ownership for high-consequence areas. For repositories without MR/PR, improve the closest reviewable diff and handoff surface rather than inventing hosted governance.
 

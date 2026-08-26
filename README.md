@@ -33,7 +33,7 @@ Installation is complete only when the Skill exists in a discovery path and its 
 
 A normal bootstrap run:
 
-1. binds the exact target and inventories its existing agent instructions, documentation, manifests, commands, tests, CI, runtime paths, and learning mechanisms without executing project code during discovery;
+1. binds the exact target and inventories its existing agent instructions, documentation, manifests, commands, tests, CI, runtime paths, and learning mechanisms without executing project code during discovery or treating a nested Agentize Skill installation as project evidence;
 2. compares direct evidence with the ideal AI-native workflow and distinguishes observed facts, inference, unknowns, operational readiness, and current-task outcomes;
 3. repairs existing sources of truth or adds only the smallest missing repository-owned instruction, context, verification, review, acceptance, and knowledge-capture paths;
 4. creates focused setup guidance when credentials, permissions, accounts, test data, browser control, runners, external settings, or model integration still require a human;
@@ -54,13 +54,25 @@ An explicit `audit only`, `report only`, or `do not modify` request is static an
 
 ## Workflow it leaves behind
 
+The diagram intentionally compresses the feedback arrows so the main lifecycle stays readable. A requirement or accepted-plan problem returns to Specify or Plan; an implementation or review defect returns through Execute, the relevant verification, independent re-review, and Human Acceptance as applicable.
+
+[![AI-powered development workflow showing planning, verification, independent review, human acceptance, MR/PR gates, and knowledge capture](docs/workflow.en.png)](docs/workflow.en.png)
+
 ```text
-Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification <-> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> AI Review + MR/PR CI -> Merge
+Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification -> Independent Reviewer Agent -> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> Platform AI Review + MR/PR CI -> Merge
 ```
 
 Continuous Knowledge Capture spans active development. Full E2E follows the repository's explicit cost- and risk-aware policy and may run per MR/PR, at test or staging promotion, on a schedule, before release, or in a documented combination. Shipping and production observation are conditional on the kind of project. Automatic Post-Merge Knowledge Audit is an optional configured backstop for durable knowledge missed late in the lifecycle, not a minimum daily step.
 
-This is the ideal workflow, not a claim that every repository already supports every stage. Agentize Skill keeps the workflow contract, repository evidence, capability readiness, human setup, and current execution results separate. The detailed responsibility and return-loop rules live in [`references/delivery-workflow.md`](references/delivery-workflow.md).
+The diagram is the ideal full path, not a promise that Agentize Skill can activate every stage in every repository. Agentize Skill creates or repairs only the repository-owned pieces supported by evidence, available tools, authorization, and proportionate cost. It keeps the workflow contract, repository evidence, capability readiness, human setup, and current execution results separate. The detailed responsibility and return-loop rules live in [`references/delivery-workflow.md`](references/delivery-workflow.md).
+
+| Agentize Skill can establish when supported | Human or external setup may still be required |
+| --- | --- |
+| Concise Agent instructions and context routing; an adaptive workflow contract; verified project commands and verification guidance; a Harness Capability Report; focused Setup Guides; and safe repository-local tests, rules, scripts, or CI definitions when the project evidence and authorization justify them. | Product intent, plan approval, risk decisions, and acceptance; credentials, accounts, test identities and data; browser or runtime environments; external CI and forge settings; branch protection; platform Reviewer Agent runners and model integration; preview or staging; observability; deployment permissions; and merge-trigger automation. |
+
+If a pictured stage is unavailable, Agentize Skill records its scoped status, consequence, fallback, and required setup. A generated instruction, workflow file, or template is not proof that the corresponding automation is active.
+
+For non-trivial work, an available fresh-context Reviewer Agent examines the candidate and available verification evidence before Human Local Acceptance, then returns findings through implementation and verification. Implementer self-review remains explicitly non-independent; a same-model fresh session provides context separation but not model diversity. Fast-path work may omit the second Agent when repository policy considers deterministic checks proportionate. Platform AI review is assessed separately and exists only when its remote automation is actually configured.
 
 Every applicable capability is reported with one operational status:
 
@@ -75,7 +87,9 @@ Every applicable capability is reported with one operational status:
 
 Current-task checks use `PASSED`, `FAILED`, `NOT EXECUTED`, or `NOT APPLICABLE` separately. A file, dependency, workflow definition, or green test is not by itself proof that a capability is ready or that the implementation matches human intent.
 
-Agentize Skill cannot invent product intent, approve its own plan or acceptance, choose risk tolerance, provide unavailable credentials or infrastructure, prove external branch protection, or create an independent AI reviewer or post-merge agent without a real runner and project-selected model integration. When a required capability cannot be established safely, the correct output is an explicit gap, setup path, and human fallback rather than pretend automation.
+For artifacts changed by the bootstrap, the handoff separately records the highest repository-delivery evidence: `WORKTREE ONLY`, `COMMITTED`, or `PUSHED`. `PLATFORM ACTIVE` is a separate, revision-specific claim used only when the forge or runner behavior is directly verified. A local PR template or CI file is not presented as active on the forge.
+
+Agentize Skill cannot invent product intent, approve its own plan or acceptance, choose risk tolerance, provide unavailable credentials or infrastructure, or prove external branch protection. A local independent Reviewer Agent depends on a verified fresh-session or delegation boundary in the named host; an automated platform reviewer or post-merge Agent additionally needs a real runner, permissions, and project-selected model integration. When a required capability cannot be established safely, the correct output is an explicit gap, setup path, and human fallback rather than pretend automation.
 
 ## Install and use
 
@@ -119,6 +133,8 @@ A repository-scoped installation uses:
 
 The first is available across repositories for that user; the second is limited to the repository tree. Other hosts may use different conventions, so `.agents/skills` is not a universal requirement.
 
+User scope is recommended because Agentize Skill is a one-time bootstrap tool, not a target-project dependency. If a host installs it inside the target repository, the scanner excludes that exact Skill package from project evidence. Agentize Skill does not modify the target's ignore, formatter, Lint, typecheck, test, build, package, or CI configuration merely to accommodate its own files; move the installation to user scope if it interferes with project checks.
+
 ## Scanner
 
 Ordinary users do not need to run the scanner manually. The two implementations use only their runtime standard library, perform a static read-only inventory, and never execute declared project commands:
@@ -130,9 +146,11 @@ python scripts/scan_repo.py --root /path/to/repository --format markdown
 python scripts/scan_repo.py --root /path/to/repository --format json
 ```
 
-Schema v5 bounds the scan by files, directories, depth, and per-file bytes; skips non-regular files and repository-external symlinks; conservatively recognizes verification commands; and redacts common credential syntax on a best-effort basis. Reports remain sensitive local evidence and should be inspected before sharing. Limits can be adjusted with `--max-files`, `--max-directories`, and `--max-depth`; any reached limit is explicit in `scan.limit_reasons` and diagnostics.
+Schema v7 bounds the scan by files, directories, depth, per-file bytes, and reported-list size; skips directory symlinks and non-regular files plus file symlinks that would re-enter excluded, ignored, vendored, over-depth, or repository-external paths; inventories recognized instruction rules, Reviewer guidance, Agent definitions, prompts, commands, or workflows, and conservative direct Claude, Gemini, and Copilot-compatible `@path` import edges found in rendered Markdown prose; conservatively recognizes verification commands; and redacts common credential syntax on a best-effort basis. Imported files can contain further imports, so the assessing Agent follows relevant edges recursively instead of treating the direct inventory as a complete context graph. Reports remain sensitive local evidence and should be inspected before sharing. Traversal limits are reported in `scan.truncated` and `scan.limit_reasons`; access and relevant parse failures appear in `scan.warnings`; `scan.traversal_incomplete` covers either kind of incomplete traversal; bounded output fields are reported separately in `scan.report_truncated` and `scan.report_truncated_sections`, and derived ecosystem detection still uses the complete scanned manifest set. When traversal or relevant evidence collection is incomplete, absence diagnostics are reported as incomplete rather than definitive. Traversal limits can be adjusted with `--max-files`, `--max-directories`, and `--max-depth`.
 
-Git queries strip inherited `GIT_*` repository selectors and inspect only repository identity and branch. They do not run `status` or `diff`, because content comparison may execute repository-configured filters. Worktree state is therefore `unverified`, never silently clean. Repository identity is tri-state: `true` is verified, `false` means no Git marker was found for the target, and `null` means a marker exists but identity could not be verified.
+Use repeatable `--exclude-path <path-inside-root>` arguments for exact files or directories that are bootstrap tooling rather than target evidence. Relative exclusions are resolved from `--root`, outside or missing paths are rejected, and `scan.excluded_paths` records the effective exclusions. Exclusions use filesystem identity, so alternate casing or a file symlink cannot reintroduce excluded evidence. When a bundled scanner itself runs from a nested package whose `SKILL.md` declares `name: agentize-skill`, it automatically excludes only that package as a defense in depth; a copied scanner in an unrelated package does not trigger this behavior, and other repository-owned Skills remain visible.
+
+Git queries strip inherited `GIT_*` repository selectors, reject a `git` executable that resolves inside the target repository, and inspect only repository identity and branch. They do not run `status` or `diff`, because content comparison may execute repository-configured filters. Worktree state is therefore `unverified`, never silently clean. Repository identity is tri-state: `true` is verified, `false` means no Git marker was found for the target or its ancestors, and `null` means a marker exists but identity could not be verified.
 
 Agentize Skill tries the Node.js scanner first, then Python when the first implementation is unavailable, incompatible, or fails to return a valid report. If neither works, it uses the host's existing read-only tools, discloses the scanner failure, and marks unavailable deterministic facts `unverified`. It never installs or upgrades a runtime merely to scan.
 
@@ -144,6 +162,7 @@ Agentize Skill tries the Node.js scanner first, then Python when the first imple
 - `references/artifacts.md` owns adaptive repository output selection and artifact contents.
 - `references/compatibility.md` owns multi-host and provider-specific reconciliation.
 - `scripts/scan_repo.py` and `scripts/scan_repo.cjs` implement the same dependency-free scanner contract.
+- `docs/workflow.en.png` and `docs/workflow.png` illustrate the ideal English and Chinese lifecycle summarized above.
 - `tests/test_scanners.py` contains deterministic scanner safety, boundary, and cross-runtime parity regressions.
 - `tests/test_package_identity.py` prevents the repository name, Skill name, selector, and installation path from drifting apart again.
 - `.github/workflows/ci.yml` runs the deterministic tests, both scanners, syntax checks, and Skill package validation on pushes to `main` and pull requests.

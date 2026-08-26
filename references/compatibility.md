@@ -10,10 +10,13 @@ Inventory all recognized instruction sources and determine which tools consume
 them before editing:
 
 - neutral or shared files such as `AGENTS.md`;
-- provider files such as `CLAUDE.md` and `GEMINI.md`;
-- nested instruction files;
-- editor rules, prompt files, and repository-local skills;
+- provider files such as `CLAUDE.md`, `GEMINI.md`, and Claude Code `REVIEW.md`;
+- nested and path-scoped rules, including Kimi Code's hierarchical `.kimi/AGENTS.md` and `agents.md`, `.claude/rules/`, `.cursor/rules/`, `.windsurf/rules/`, and `.github/instructions/` where the named host actually consumes them;
+- custom Agent definitions and Reviewer guidance such as `.claude/agents/`, `.gemini/agents/`, `.github/agents/`, and `.cursor/BUGBOT.md`;
+- prompts, commands, or workflows such as `.claude/commands/`, `.cursor/commands/`, `.gemini/commands/`, `.github/prompts/`, and `.windsurf/workflows/`, plus repository-local Skills;
 - configuration that injects other files into model context.
+
+Follow verified import relationships as well as filenames. The bundled scanner records repository-relative Markdown links and conservative direct `@path` import edges from rendered prose in recognized Claude, Gemini, and Copilot-compatible instruction surfaces, including path-like missing or repository-external targets. Follow relevant imported files recursively when the host supports nested imports; the direct scanner inventory is not a complete context graph. Treat those relationships as evidence to inspect, not proof that a particular host or live session loaded them; for example, Copilot CLI expands imports in `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md`, but not in `GEMINI.md` or path-scoped `*.instructions.md` files.
 
 Use the established working source as authority when it is clear. For a new
 tool-neutral repository, `AGENTS.md` is a reasonable default. Do not rename a
@@ -44,7 +47,7 @@ the requested workflow, verify only the relevant questions:
 | Approval and isolation | Whether approval, command policy, filesystem sandbox, network boundary, and operating-system isolation are independent; which one actually blocks the action. |
 | Hooks and policy | The event boundary, active configuration tier, argument scope, timeout behavior, and whether errors fail closed, ask a person, or continue. |
 | Session continuity | What survives compaction, resume, process failure, and a new session; whether an interrupted external effect is known, unknown, or safely retryable. |
-| Delegation | Child context, tool and authority inheritance, workspace/process isolation, concurrency limits, result provenance, and integration ownership. |
+| Delegation | Child context, tool and authority inheritance, workspace/process isolation, concurrency limits, result provenance, integration ownership, and whether a review child can receive a bounded fresh packet instead of the implementer's full conversation. |
 | Runtime interaction | Which applicable Web/UI, API, database/migration, worker/queue, or CLI/script surface the Agent can actually exercise in a safe local or test environment; how it supplies approved inputs and observes results; and whether the capability survives in future sessions. For Web/UI, include browser control and Network/console/log access. |
 | Human interaction | How clarification, rejection feedback, plan decisions, local product acceptance, conditional preview/staging acceptance, and consequential release authority reach the responsible person. |
 
@@ -73,6 +76,13 @@ resolve it. When instructions change but the host only loads them at session
 start or on explicit reload, make that refresh boundary visible in the handoff;
 do not assume the currently running model has seen its own edit.
 
+Reconcile broad claims in repository guidance against this scoped evidence.
+Statements such as "loaded in every Agent session," "all coding agents follow
+this file," or "works across hosts" must be narrowed to the hosts and refresh
+boundaries actually verified, or rewritten as an intended convention with the
+unverified hosts named. A provider-neutral filename improves portability but
+does not prove that every host discovers or injects it.
+
 ## Skills, prompts, and commands
 
 Use a repository-local skill for a recognizable, repeated workflow with its own
@@ -94,6 +104,33 @@ and document the source of truth.
 Split a large skill when workflows have different triggers, permissions, or
 definitions of done. Keep deterministic parsing and repeated transformations
 in scripts; keep judgment and repository adaptation in instructions.
+
+## Reviewer Agent separation
+
+Apply the normative review contract in
+[delivery-workflow.md](delivery-workflow.md#6-independent-pre-acceptance-technical-review),
+then verify how the active host can actually supply it. Local pre-acceptance
+review and platform AI review are separate capabilities:
+
+- a local Reviewer Agent may use an already available fresh session, delegated
+  task, or subagent in the active host and does not inherently require a new
+  repository secret or model-provider integration;
+- a platform Reviewer Agent needs an actual forge trigger or App, remote diff and
+  comment access, a durable runner and model path, credentials, permissions, cost
+  controls, and defined behavior for untrusted contributions and failures.
+
+For local review, verify what context the host forks by default, whether the
+caller can pass only the authoritative review packet, whether tools and approvals
+are inherited, whether the reviewer can be kept from editing the candidate, and
+how its findings return with revision provenance. A new label, role prompt, or
+subagent name does not create separation if the child inherits the implementation
+conversation and conclusions unchanged. A same-model fresh session can provide
+useful separate-context review, but record that it is not model diversity.
+
+Do not install a second model, create credentials, or add multiple specialist
+reviewers during generic bootstrap merely to improve the label. Where the host
+cannot supply a fresh review boundary, classify the capability honestly and use
+the repository's named non-independent or Human Technical Review fallback.
 
 ## Hooks and rules
 
@@ -120,15 +157,15 @@ the project's selected per-change, test/staging promotion, scheduled, pre-releas
 or hybrid trigger; the exact revision or release candidate; concurrency and cost
 limits; result retention and notification; and what boundary a failure blocks.
 
-MR/PR, Reviewer Agent, Full E2E, Targeted Runtime Verification, preview/staging,
-and post-merge audit capabilities belong to combinations of host, project,
-runtime, runner, and repository platform, not to a model name. Verify the actual
+Platform AI review, Full E2E, Targeted Runtime Verification, preview/staging, and
+post-merge audit capabilities belong to combinations of host, project, runtime,
+runner, and repository platform, not to a model name. Verify the actual
 Git forge, Draft-versus-Ready behavior, default-branch and fork behavior, merge
 event, comment and diff access, token permissions, untrusted-contribution
-boundary, concurrency, cost, and failure handling. An implementing Agent,
-runtime evidence, Human Local Acceptance, an independent Reviewer Agent, CI,
-branch protection, and conditional preview/staging acceptance are distinct
-evidence or governance sources.
+boundary, concurrency, cost, and failure handling. An implementing Agent, local
+separate-context review, runtime evidence, Human Local Acceptance, platform AI
+review, CI, branch protection, and conditional preview/staging acceptance are
+distinct evidence or governance sources.
 
 A GitHub Actions or GitLab CI file does not supply an Agent runner, model access,
 credentials, E2E or runtime environment, seed data, test account, database,

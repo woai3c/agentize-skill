@@ -12,6 +12,7 @@ that repository.
 - `references/artifacts.md`: adaptive repository output selection and contents.
 - `references/compatibility.md`: multi-host and provider-specific reconciliation.
 - `scripts/scan_repo.py` and `scripts/scan_repo.cjs`: dependency-free, read-only repository inventory implementations with one shared contract.
+- `docs/workflow.en.png` and `docs/workflow.png`: English and Chinese illustrations of the ideal workflow described by the README and delivery reference.
 - `tests/test_scanners.py`: deterministic scanner safety, boundary, and cross-runtime parity regressions.
 - `tests/test_package_identity.py`: canonical Skill name, display name, selector, and installation-path regression.
 - `.github/workflows/ci.yml`: read-only GitHub CI for tests, scanner execution, syntax, and package validation.

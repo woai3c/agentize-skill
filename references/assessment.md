@@ -53,6 +53,17 @@ guidance without being an enforced restriction, and a documented provider
 feature may be disabled at the project tier or unavailable in the current host.
 Describe those states accurately instead of flattening them into "supported."
 
+When forge or runner behavior materially affects a status and an already
+available, authorized read-only CLI or API can inspect it safely, query the
+actual platform. Distinguish repository definition, remote revision, workflow
+run history, and merge enforcement: each proves a different boundary. Inspect
+applicable branch protection or rulesets, required checks, default-branch and
+fork behavior, and recent representative runs only as needed for the claim. Do
+not install a client, request wider credentials, or mutate settings merely to
+improve evidence. If direct platform evidence is unavailable, use `unverified`
+or `UNVERIFIED`; never translate absence of evidence into "not configured" or
+presence of YAML into "active."
+
 ## Capability rubric
 
 Classify each applicable or requested capability independently. A repository can
@@ -69,9 +80,10 @@ be strong in one, missing another, and have no need for a third.
 | Planning and plan review | Non-trivial work produces a scoped, evidence-backed plan and has a real route for Human Plan Review; a bounded fast path exists for obvious low-risk work. | The Agent edits before surfacing assumptions; silence is approval; every typo requires heavyweight ceremony. |
 | Fast verification | Relevant Unit and Integration tests, typecheck, Lint, and necessary build commands are exact, safe, and cheap enough for the implementation loop. | Only "run tests"; the full E2E suite is required after every edit; commands need undocumented state. |
 | Targeted runtime verification | Each applicable changed surface has a safe focused runtime path: browser interaction for Web/UI, representative requests for APIs, isolated execution for migrations, controlled messages for workers/queues, or real invocation for CLIs/scripts. Evidence is bound to the tested change, environment, inputs or test state, exact actions, observable predicates, and permitted side effects. | Browser is forced onto non-Web work; Unit tests are presented as runtime proof; a framework or command is assumed usable without environment, data, reset, permissions, or an active host; fixed delays, ambiguous matches, or artifacts without provenance are treated as proof. |
-| Human Local Acceptance | After applicable local Agent verification, a human or established policy decides whether the outcome is actually wanted before the change becomes Ready for Review; failed acceptance returns through implementation and local verification. | Green checks are treated as product approval; an Agent accepts its own interpretation; acceptance first appears after technical MR/PR gates; routine work repeats an identical human ceremony locally and remotely. |
+| Independent pre-acceptance review | For non-trivial or policy-selected work, a separate-context Reviewer Agent with no implementation ownership examines the exact candidate, authoritative intent, surrounding code, tests, and verification evidence before Human Local Acceptance. Findings return through implementation, verification, and review; provenance and missing capability remain explicit. | Implementer self-review or a full-history child is called independent; the reviewer edits its own subject; a pass is reused after the candidate changes; every trivial edit requires multiple Agents; missing review is silently skipped. |
+| Human Local Acceptance | After applicable local Agent verification and independent review are accounted for, a human or established policy decides whether the outcome is actually wanted before the change becomes Ready for Review; failed acceptance returns to planning when intent changed or through implementation, verification, and review for implementation defects. | Green checks or Reviewer approval are treated as product approval; an Agent accepts its own interpretation; acceptance first appears after technical MR/PR gates; routine work repeats an identical human ceremony locally and remotely. |
 | Change workflow | An agent can explore, plan, implement, debug, retest, and hand off through explicit correction loops without Agentize Skill. | Commands require undocumented setup; feedback has no return path; future sessions depend on the bootstrap chat. |
-| Draft/Ready MR/PR review and CI | Reviewed-branch projects allow Draft MR/PR early without treating it as ready, gate Ready for Review on local verification and Human Local Acceptance, distinguish implementing-Agent evidence from independent AI review where configured, and run the complete applicable per-change MR/PR CI gate set. Every fix returns through local checks, MR/PR update, AI Review, and MR/PR CI. | Draft creation is treated as readiness; an Agent approves itself; a YAML file is assumed active without a runner or permissions; a fix bypasses rerun gates; a green aggregate ignores a failed, cancelled, missing, or unexpectedly skipped result assigned to the MR/PR boundary. |
+| Draft/Ready MR/PR, platform AI review, and CI | Reviewed-branch projects allow Draft MR/PR early without treating it as ready, gate Ready for Review on local verification, applicable independent pre-acceptance review, and Human Local Acceptance, distinguish local review from configured platform AI review, and run the complete applicable per-change MR/PR CI gate set. Every fix returns through local verification and review before MR/PR update and gate reruns. | Draft creation is treated as readiness; local review is confused with a remote required gate; a YAML file is assumed active without a runner or permissions; a fix bypasses rerun gates; a green aggregate ignores a failed, cancelled, missing, or unexpectedly skipped result assigned to the MR/PR boundary. |
 | E2E placement and evidence | A cost- and risk-aware policy places targeted or full E2E per MR/PR, at test/staging promotion, on a schedule, before release, or in an explicit combination. Each path names its suite, trigger, revision/candidate, environment/data, cost, owner, blocking target, and failure route; task evidence states when E2E did not run. | Full E2E is forced onto every MR/PR regardless of cost; expensive E2E is deferred with no trigger or owner; framework presence is called readiness; a scheduled result is attributed to a different change; “all regression passed” is claimed when only MR/PR gates ran. |
 | Delivery and observation | Applicable merge, release, rollback, operational checks, and success signals are discoverable with their owners and permissions. | Deployment is mixed into routine checks; no rollback or success signal; production access is assumed. |
 | Continuous knowledge capture | During implementation, authoritative durable, non-obvious, reusable knowledge is routed into the current change and the smallest semantic owner; deterministic enforcement is added separately when proportionate. | Every note is deferred until merge; human corrections remain only in chat; unconfirmed inference becomes policy; detailed knowledge is left in root instructions; a test is treated as the sole source of consequential business intent. |
@@ -122,12 +134,12 @@ reason, consequence, and fallback or human action. Never turn `SETUP REQUIRED`,
 `NOT CONFIGURED`, or `UNVERIFIED` into a silent skip or an all-gates-passed claim.
 
 Classify capabilities independently; do not collapse them into a score. The
-ideal workflow, evidence assessment, operational status, and current-task
-execution outcome are four different things. An Agentize Skill run can finish honestly
-with unresolved work, but if a request-critical capability is not `READY` and
-has no safe fallback or human decision path, the handoff must describe the
-repository as only partially prepared. This is an outcome rule, not another
-user-selectable mode.
+ideal workflow, evidence assessment, operational status, artifact delivery and
+platform activation, and current-task execution outcome are five different
+things. An Agentize Skill run can finish honestly with unresolved work, but if a
+request-critical capability is not `READY` and has no safe fallback or human
+decision path, the handoff must describe the repository as only partially
+prepared. This is an outcome rule, not another user-selectable mode.
 
 ## Scenario handling
 
@@ -196,6 +208,6 @@ Reject the common weak signals in the rubric above, especially patches that prim
 - a runtime surface selected by habit rather than the changed behavior, evidence without change/environment/action/predicate provenance, or E2E conflated with targeted runtime verification;
 - full E2E forced into every edit or MR/PR regardless of cost, or deferred without an exact trigger, tested revision, owner, blocking target, and failure route;
 - Draft represented as Ready, a repair bypassing applicable review or CI reruns, or an aggregate hiding failed, cancelled, timed-out, missing, or unexpectedly skipped required gates;
-- an implementing Agent's self-review labeled independent, or a provider control called enforced solely because its prompt or configuration exists;
+- an implementing Agent's self-review or a full-history child labeled independent, a Reviewer Agent that repairs the candidate it judges without a new review boundary, or a provider control called enforced solely because its prompt or configuration exists;
 - knowledge deferred unnecessarily until merge, promoted from unconfirmed feedback, written directly to the default branch, or generated by supposed post-merge automation with no verified trigger and Agent path;
 - low-impact unknowns, duplicated facts, or any future workflow that requires Agentize Skill to remain installed.
