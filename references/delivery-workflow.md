@@ -16,7 +16,9 @@ scope -> inventory -> assess -> install or repair -> verify -> handoff -> exit
 The ideal repository workflow is:
 
 ```text
-Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification -> Independent Reviewer Agent -> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> Platform AI Review + MR/PR CI -> Merge
+Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification
+  -> [Independent Reviewer Agent when applicable] -> Human Local Acceptance
+  -> Create / Mark MR/PR Ready for Review <-> MR/PR CI + [Platform AI Review when configured] -> Merge
 ```
 
 Continuous Knowledge Capture spans Specify through Merge. Shipping and

@@ -8,26 +8,25 @@ Agentize Skill 是一个厂商中立的 Coding Agent Skill，用于把现有仓�
 
 > **Agentize Skill should leave behind the system, not become the system.**
 
-最终结果留在目标仓库中。后续 Codex、Claude Code、Gemini CLI、Kimi CLI 或其他 Coding Agent 会依赖仓库留下的指令、文档、检查、CI、工具和决策路径工作，不应把 Agentize Skill 当作运行时依赖。
+最终结果留在目标仓库中。后续 Coding Agent 会依赖仓库留下的指令、文档、检查、CI、工具和决策路径工作，无论宿主是 Claude Code、Codex、Gemini CLI、Kimi CLI 还是其他兼容 Agent，都不应把 Agentize Skill 当作运行时依赖。
 
 ## 快速开始
 
-把下面这段话发给具备 Skill 安装能力的 Coding Agent：
+默认按用户级作用域安装 Agentize Skill，使它可以在多个仓库中使用。把下面这段宿主中立的 Prompt 发给能够安装 Agent Skills 的 Coding Agent：
 
 ```text
-请使用当前宿主的 Skill 安装器（在 Codex 中使用 $skill-installer），安装下面这个位于仓库根目录的 Agent Skill：
-https://github.com/woai3c/agentize-skill
-
-统一使用 agentize-skill 作为 Skill 机器名称和安装目录名。如果安装器要求提供仓库内路径，请使用 .，并显式把目标名称设为 agentize-skill。请按用户级作用域安装，使其在我的所有仓库中可用。如果当前宿主没有安装器但支持 Agent Skills，请按该宿主文档中的手动安装方式，把完整仓库根目录复制到名为 agentize-skill 的用户级目录。安装后验证已安装 SKILL.md 中声明的是 name: agentize-skill，并报告准确安装路径和源码 Revision。如果当前宿主根本不支持加载 Agent Skills，请明确说明 Agentize Skill 未安装并停止，不要改用其他 Skill 或工具。现在不要运行这个 Skill。
+请按照当前宿主文档中的 Agent Skills 安装机制，把 https://github.com/woai3c/agentize-skill 仓库根目录的 Agent Skill 安装到用户级作用域。请把完整 Skill 包安装为 agentize-skill，验证其中的 SKILL.md 声明了 name: agentize-skill，并报告安装路径。现在不要运行它。
 ```
 
-然后打开需要改造的仓库并发送：
+如果只想把 Agentize Skill 安装在当前仓库，请把上面 Prompt 中的 `安装到用户级作用域` 改为 `安装到当前仓库的仓库级作用域`。
+
+然后打开需要改造的仓库，通过当前宿主的常规方式选择或调用已安装 Skill，并发送：
 
 ```text
-使用 Agentize Skill（支持显式 Skill Selector 时使用 $agentize-skill）把这个现有仓库一次性改造成可独立运行、Human-in-the-loop 的 AI 开发 Harness。保留当前工具和约定，只做最小且有证据支持的变更，诚实暴露尚不支持的能力和人工配置，验证最终结果，并分别交接有明确作用域的 Harness Capability Report 和本次任务结果。
+使用 Agentize Skill 把这个现有仓库一次性改造成可独立运行、Human-in-the-loop 的 AI 开发 Harness。保留当前工具和约定，只做最小且有证据支持的变更，诚实暴露尚不支持的能力和人工配置，验证最终结果，并分别交接有明确作用域的 Harness Capability Report 和本次任务结果。
 ```
 
-只有当 Skill 已位于宿主发现路径中，并且其中的 `SKILL.md` 经过验证，安装才算完成；无关的分析报告不能作为安装证据。如果新安装的 Agentize Skill 尚未出现，请刷新宿主的 Skill 列表或新建一个 Agent 会话。仓库级安装、不同宿主的路径、只读审计和聚焦修复说明见[安装与使用](#安装与使用)。
+如果新安装的 Skill 尚未出现，请刷新宿主的 Skill 列表或新建一个 Agent 会话。安装契约、有文档依据的 Codex 示例、只读审计和聚焦修复说明见[安装与使用](#安装与使用)。
 
 ## 它能做什么
 
@@ -54,17 +53,21 @@ Agentize Skill 会让根 Agent 指令文件保持简洁并主要承担导航职�
 
 ## 它留下的工作流
 
-为了让主流程保持易读，图片有意简化了部分反馈箭头。需求或已接受方案本身有问题时，应返回 Specify 或 Plan；实现或评审发现缺陷时，应按需返回 Execute，并重新经过相关验证、独立复审与 Human Acceptance。
+图片展示的是理想完整路径，不是所有任务都必须执行的清单，也不代表图中每项能力都已生效。只有具备合适的 Fresh-context Review 路径，或仓库 Policy 明确要求时，Independent Agent Review 才适用；Platform AI Review 仅在真实配置后适用。Repository Policy 认为确定性检查和 Self-review 已经足够时，Fast Path 可以省略独立 Agent Review。
 
-[![AI 高效开发工作流，展示规划、自验证、独立评审、人工验收、MR/PR Gate 与知识沉淀](docs/workflow.png)](docs/workflow.png)
+为了让主流程保持易读，图片有意简化了部分反馈箭头。需求或已接受方案本身有问题时，应返回 Specify 或 Plan；实现或评审发现缺陷时，应返回 Execute，并重新经过相关验证、适用的独立复审与 Human Acceptance。
+
+[![理想 AI 高效开发工作流，展示规划、自验证、条件适用的独立评审、人工验收、MR/PR Gate 与知识沉淀](docs/workflow.png)](docs/workflow.png)
 
 ```text
-Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification -> Independent Reviewer Agent -> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> Platform AI Review + MR/PR CI -> Merge
+Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification
+  -> [适用时 Independent Reviewer Agent] -> Human Local Acceptance
+  -> Create / Mark MR/PR Ready for Review <-> MR/PR CI + [已配置时 Platform AI Review] -> Merge
 ```
 
 Continuous Knowledge Capture 贯穿整个开发过程。Full E2E 遵循仓库明确的 Cost/Risk-aware Policy，可以放在每个 MR/PR、测试或预发布环境晋级、固定时间、Release 前，或采用有文档说明的组合策略。Ship 与生产观察只适用于相应类型的项目。自动 Post-Merge Knowledge Audit 只是用于检查开发后期遗漏 Durable Knowledge 的可选兜底，不是最小日常步骤。
 
-图片展示的是理想的完整路径，不代表 Agentize Skill 能在每个仓库中激活全部阶段。Agentize Skill 只会创建或修复有仓库证据、当前工具、授权和合理成本支持的仓库自有部分，并分别表达 Workflow Contract、Repository Evidence、Capability Readiness、Human Setup 和当前执行结果。详细的职责与返工循环规则位于 [`references/delivery-workflow.md`](references/delivery-workflow.md)。
+Agentize Skill 只会创建或修复有仓库证据、当前工具、授权和合理成本支持的仓库自有部分，并分别表达 Workflow Contract、Repository Evidence、Capability Readiness、Human Setup 和当前执行结果。详细的职责与返工循环规则位于 [`references/delivery-workflow.md`](references/delivery-workflow.md)。
 
 | Agentize Skill 在条件支持时可以建立 | 仍可能需要人类或外部平台配置 |
 | --- | --- |
@@ -93,47 +96,51 @@ Agentize Skill 不能虚构产品意图、批准自己的 Plan 或 Acceptance、
 
 ## 安装与使用
 
-### 安装细节
+### 安装契约
 
-仓库名、`SKILL.md` 机器名称、规范安装目录名和显式 Selector 现已统一为 `agentize-skill`；面向用户的显示名称是 `Agentize Skill`。快速开始中的 Prompt 请求的是可跨仓库复用的用户级安装；如果只想在当前仓库使用，请明确说明。具备安装能力的 Agent 应遵循当前宿主的 Skill 发现机制，复制位于仓库根目录的完整 Skill，验证发现状态和已安装 Frontmatter，并报告准确路径与源码 Revision。裸 GitHub URL 只能标识来源；如果安装 Helper 还要求仓库内路径，那么本仓库应传 `.`，并显式把目标名称设为 `agentize-skill`。不支持 Agent Skill 的宿主无法把本仓库作为 Skill 安装，必须如实报告限制，不能转而运行无关工具。
+开放的 [Agent Skills 规范](https://agentskills.io/specification) 标准化 Skill 包内容，但没有规定通用安装路径或命令。请遵循当前宿主文档中的发现机制。
 
-安装后，在宿主的 Skill Picker 中选择 `Agentize Skill`，或者在支持时显式调用 `$agentize-skill`。你不需要自己运行随附扫描器。
+应安装完整仓库根目录，因为 `SKILL.md` 会使用随附的 `references/` 和 `scripts/`。仓库名、`SKILL.md` 机器名称和规范安装目录名都是 `agentize-skill`；显示名称是 `Agentize Skill`。如果安装器要求提供仓库内源码路径，请使用 `.`。当完整包位于所选发现作用域内，并且已安装的 `SKILL.md` 声明 `name: agentize-skill` 时，安装才算完成。
+
+用户级和仓库级作用域都有效：
+
+| 作用域 | 可用范围 | 常见用途 |
+| --- | --- | --- |
+| 用户级 | 该用户的多个仓库 | 重复执行 Bootstrap 或审计。 |
+| 仓库级 | 仅对应仓库树 | 试用、项目级版本固定或团队共享。 |
+
+仓库级副本不会因此成为目标项目的运行时依赖。它嵌套在目标仓库内时，扫描器会从项目证据中排除这个精确的 Agentize Skill 包。Agentize Skill 不会仅为迁就自己的文件而修改目标项目的 Ignore、Formatter、Lint、Typecheck、测试、构建、包或 CI 配置；如果安装副本干扰项目检查，应移动该副本。
+
+如果宿主支持 Agent Skills 但没有安装器，请使用其文档规定的手动安装流程。如果宿主不能加载 Agent Skills，本仓库就不能作为 Skill 安装到该宿主。需要可复现安装时，请在安装路径旁记录源码 Revision。
+
+### 宿主特定示例：Codex
+
+Codex 只是一个有官方文档依据的宿主示例，不是使用要求或运行时依赖。[Codex 会从多个作用域发现本地 Skill](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)：
+
+| 作用域 | Codex 路径 |
+| --- | --- |
+| 用户级 | `~/.agents/skills/agentize-skill/` |
+| 仓库级 | `<repository>/.agents/skills/agentize-skill/` |
+
+在 Codex 中，`$skill-installer` 可以安装本地使用的 Skill；安装后可以在 Skill UI 中选择，或显式调用 `$agentize-skill`。其他宿主可能使用不同的路径、安装器、Picker 或 Selector；`.agents/skills`、`$skill-installer` 和 `$agentize-skill` 都是 Codex 示例，不是跨宿主要求。
+
+安装后，通过当前宿主的常规方式选择 `Agentize Skill`。你不需要自己运行随附扫描器。
 
 ### 其他使用方式
 
 只读审计：
 
 ```text
-使用 Agentize Skill（支持时使用 $agentize-skill）审计这个仓库的 AI 开发 Harness。不要修改文件，也不要运行项目定义的命令。报告证据、冲突、缺口、未知项、配置需求和 Fallback。
+使用 Agentize Skill 审计这个仓库的 AI 开发 Harness。不要修改文件，也不要运行项目定义的命令。报告证据、冲突、缺口、未知项、配置需求和 Fallback。
 ```
 
 聚焦修复：
 
 ```text
-使用 Agentize Skill（支持时使用 $agentize-skill）协调这个仓库的 Agent 指令与真实验证路径。保持无关文件不变。
+使用 Agentize Skill 协调这个仓库的 Agent 指令与真实验证路径。保持无关文件不变。
 ```
 
 通常一次成功的 Bootstrap 就够了。后续 Feature 和 Bug 工作应直接遵循仓库中留下的 Harness。只有当项目或工具变化后，你明确想重新审计或修复 Harness 时，才需要再次运行 Agentize Skill。
-
-### 手动安装作用域
-
-开放的 [Agent Skills 规范](https://agentskills.io/specification) 标准化 Skill 目录内容，但没有规定通用安装路径。请遵循当前宿主的文档。
-
-例如，[Codex 会从多个作用域发现 Skill](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。可跨仓库复用的用户级安装通常使用：
-
-```text
-~/.agents/skills/agentize-skill/
-```
-
-仓库级安装使用：
-
-```text
-<repository>/.agents/skills/agentize-skill/
-```
-
-前者可供该用户的多个仓库使用；后者只作用于对应仓库树。其他宿主可能采用不同约定，所以 `.agents/skills` 不是通用强制规则。
-
-推荐使用用户级安装，因为 Agentize Skill 是一次性 Bootstrap 工具，不是目标项目依赖。如果宿主把它安装在目标仓库内，扫描器会从项目证据中排除这个精确的 Skill 包。Agentize Skill 不会仅为迁就自己的文件而修改目标项目的 Ignore、Formatter、Lint、Typecheck、测试、构建、包或 CI 配置；如果安装副本干扰项目检查，应把它移到用户级作用域。
 
 ## 扫描器
 

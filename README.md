@@ -8,26 +8,25 @@ Agentize Skill is a vendor-neutral coding-agent Skill that bootstraps an existin
 
 > **Agentize Skill should leave behind the system, not become the system.**
 
-The result lives in the target repository. Future Codex, Claude Code, Gemini CLI, Kimi CLI, or other coding-agent sessions should work from the instructions, docs, checks, CI, tools, and decision paths left there; they should not need Agentize Skill as a runtime dependency.
+The result lives in the target repository. Future coding-agent sessions should work from the instructions, docs, checks, CI, tools, and decision paths left there, whether the host is Claude Code, Codex, Gemini CLI, Kimi CLI, or another compatible agent; they should not need Agentize Skill as a runtime dependency.
 
 ## Quick start
 
-Send this prompt to a coding agent with Skill installation support:
+By default, install Agentize Skill at user scope so it is available across repositories. Send this host-neutral prompt to a coding agent that can install Agent Skills:
 
 ```text
-Use this host's Skill installer (in Codex, use $skill-installer) to install the repository-root Agent Skill from:
-https://github.com/woai3c/agentize-skill
-
-Use agentize-skill as the canonical Skill name and installation-directory name. If the installer requires a path inside the repository, use . and explicitly name the destination agentize-skill. Install it at user scope so it is available in all my repositories. If this host has no installer but supports Agent Skills, use its documented manual installation mechanism and copy the complete repository root into a user-scoped directory named agentize-skill. Verify that the installed SKILL.md declares name: agentize-skill, then report the exact installed path and source revision. If this host cannot load Agent Skills, say that Agentize Skill was not installed and stop; do not substitute another Skill or tool. Do not run the Skill yet.
+Install the repository-root Agent Skill from https://github.com/woai3c/agentize-skill at user scope, following this host's documented Agent Skills installation mechanism. Install the complete package as agentize-skill, verify that its SKILL.md declares name: agentize-skill, and report the installed path. Do not run it yet.
 ```
 
-Then open the repository you want to prepare and ask:
+To keep Agentize Skill only in the repository you are currently preparing, replace `at user scope` in the prompt above with `at repository scope for the current repository`.
+
+Then open the repository you want to prepare, select or invoke the installed Skill using that host's normal mechanism, and ask:
 
 ```text
-Use Agentize Skill ($agentize-skill where explicit Skill selectors are supported) to bootstrap this existing repository as a self-contained, human-in-the-loop AI development harness. Preserve its current tools and conventions, make the smallest evidence-backed changes, expose unsupported capabilities and human setup honestly, verify the result, and finish with a scoped Harness Capability Report and separate task outcomes.
+Use Agentize Skill to bootstrap this existing repository as a self-contained, human-in-the-loop AI development harness. Preserve its current tools and conventions, make the smallest evidence-backed changes, expose unsupported capabilities and human setup honestly, verify the result, and finish with a scoped Harness Capability Report and separate task outcomes.
 ```
 
-Installation is complete only when the Skill exists in a discovery path and its `SKILL.md` has been verified; an unrelated analysis report is not installation evidence. If the newly installed Agentize Skill is not visible, refresh the host's Skill list or start a new agent session. See [Install and use](#install-and-use) for repository-only installation, host-specific paths, read-only audits, and focused repairs.
+If the newly installed Skill is not visible, refresh the host's Skill list or start a new agent session. See [Install and use](#install-and-use) for the installation contract, a documented Codex example, read-only audits, and focused repairs.
 
 ## What it does
 
@@ -54,17 +53,21 @@ An explicit `audit only`, `report only`, or `do not modify` request is static an
 
 ## Workflow it leaves behind
 
-The diagram intentionally compresses the feedback arrows so the main lifecycle stays readable. A requirement or accepted-plan problem returns to Specify or Plan; an implementation or review defect returns through Execute, the relevant verification, independent re-review, and Human Acceptance as applicable.
+The diagram shows the ideal full path, not a mandatory checklist for every task or a claim that every pictured capability is active. Independent Agent Review applies when a suitable fresh-context review path is available or repository policy requires it; Platform AI Review applies only when configured. Fast-path work may omit independent Agent review when repository policy considers deterministic checks and self-review proportionate.
 
-[![AI-powered development workflow showing planning, verification, independent review, human acceptance, MR/PR gates, and knowledge capture](docs/workflow.en.png)](docs/workflow.en.png)
+The diagram intentionally compresses the feedback arrows so the main lifecycle stays readable. A requirement or accepted-plan problem returns to Specify or Plan; an implementation or review defect returns through Execute, the relevant verification, applicable independent re-review, and Human Acceptance.
+
+[![Ideal AI-powered development workflow showing planning, verification, conditional independent review, human acceptance, MR/PR gates, and knowledge capture](docs/workflow.en.png)](docs/workflow.en.png)
 
 ```text
-Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification -> Independent Reviewer Agent -> Human Local Acceptance -> Create / Mark MR/PR Ready for Review <-> Platform AI Review + MR/PR CI -> Merge
+Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verification -> Targeted Runtime Verification
+  -> [Independent Reviewer Agent when applicable] -> Human Local Acceptance
+  -> Create / Mark MR/PR Ready for Review <-> MR/PR CI + [Platform AI Review when configured] -> Merge
 ```
 
 Continuous Knowledge Capture spans active development. Full E2E follows the repository's explicit cost- and risk-aware policy and may run per MR/PR, at test or staging promotion, on a schedule, before release, or in a documented combination. Shipping and production observation are conditional on the kind of project. Automatic Post-Merge Knowledge Audit is an optional configured backstop for durable knowledge missed late in the lifecycle, not a minimum daily step.
 
-The diagram is the ideal full path, not a promise that Agentize Skill can activate every stage in every repository. Agentize Skill creates or repairs only the repository-owned pieces supported by evidence, available tools, authorization, and proportionate cost. It keeps the workflow contract, repository evidence, capability readiness, human setup, and current execution results separate. The detailed responsibility and return-loop rules live in [`references/delivery-workflow.md`](references/delivery-workflow.md).
+Agentize Skill creates or repairs only the repository-owned pieces supported by evidence, available tools, authorization, and proportionate cost. It keeps the workflow contract, repository evidence, capability readiness, human setup, and current execution results separate. The detailed responsibility and return-loop rules live in [`references/delivery-workflow.md`](references/delivery-workflow.md).
 
 | Agentize Skill can establish when supported | Human or external setup may still be required |
 | --- | --- |
@@ -93,47 +96,51 @@ Agentize Skill cannot invent product intent, approve its own plan or acceptance,
 
 ## Install and use
 
-### Installation details
+### Installation contract
 
-The repository name, `SKILL.md` machine name, canonical installation-directory name, and explicit selector are all `agentize-skill`; the user-facing display name is `Agentize Skill`. The quick-start prompt requests a reusable user-scoped installation. To keep it only in the current repository, say so explicitly. An installation-capable agent should follow the active host's documented discovery mechanism, copy the complete repository-root Skill, verify discovery and the installed frontmatter, and report the exact path and source revision. A bare GitHub URL identifies the source but is not a complete helper invocation when that installer also requires an in-repository path; for this repository the path is `.` and the explicit destination name is `agentize-skill`. A host without Agent Skill support cannot install this package as a Skill and must report that limitation instead of running an unrelated tool.
+The open [Agent Skills specification](https://agentskills.io/specification) standardizes the Skill package, not a universal installation path or command. Follow the active host's documented discovery mechanism.
 
-After installation, select `Agentize Skill` in the host's Skill picker or invoke `$agentize-skill` where supported. You do not need to run the bundled scanner yourself.
+Install the complete repository root because `SKILL.md` uses the bundled `references/` and `scripts/`. The repository name, `SKILL.md` machine name, and canonical installation-directory name are `agentize-skill`; the display name is `Agentize Skill`. If an installer requires an in-repository source path, use `.`. Installation is complete when the package is in the selected discovery scope and the installed `SKILL.md` declares `name: agentize-skill`.
+
+User and repository scope are both valid:
+
+| Scope | Availability | Typical use |
+| --- | --- | --- |
+| User | Across that user's repositories | Repeated bootstrap or audit work. |
+| Repository | Only within that repository tree | Evaluation, project-specific pinning, or team sharing. |
+
+A repository-scoped copy does not become a runtime dependency of the target project. When it is nested inside the target, the scanner excludes that exact Agentize Skill package from project evidence. Agentize Skill will not change the target's ignore, formatter, Lint, typecheck, test, build, package, or CI configuration merely to accommodate its own files; move the installation if the copy interferes with project checks.
+
+If the host supports Agent Skills but has no installer, use its documented manual installation process. If it cannot load Agent Skills, this package cannot be installed there as a Skill. For a reproducible install, record the source revision alongside the installed path.
+
+### Host-specific example: Codex
+
+Codex is one documented host example, not a requirement or runtime dependency. [Codex discovers local Skills from multiple scopes](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills):
+
+| Scope | Codex location |
+| --- | --- |
+| User | `~/.agents/skills/agentize-skill/` |
+| Repository | `<repository>/.agents/skills/agentize-skill/` |
+
+In Codex, `$skill-installer` can install Skills for local use, and the installed Skill can be selected in the Skill UI or invoked as `$agentize-skill`. Other hosts may use different paths, installers, pickers, or selectors; `.agents/skills`, `$skill-installer`, and `$agentize-skill` are Codex examples rather than cross-host requirements.
+
+After installation, select `Agentize Skill` using the active host's normal mechanism. You do not need to run the bundled scanner yourself.
 
 ### Other ways to use it
 
 Read-only audit:
 
 ```text
-Use Agentize Skill ($agentize-skill where supported) to audit this repository's AI development harness. Do not modify files or run project-defined commands. Report evidence, conflicts, gaps, unknowns, setup needs, and fallbacks.
+Use Agentize Skill to audit this repository's AI development harness. Do not modify files or run project-defined commands. Report evidence, conflicts, gaps, unknowns, setup needs, and fallbacks.
 ```
 
 Focused repair:
 
 ```text
-Use Agentize Skill ($agentize-skill where supported) to reconcile this repository's agent instructions and real verification paths. Keep unrelated files unchanged.
+Use Agentize Skill to reconcile this repository's agent instructions and real verification paths. Keep unrelated files unchanged.
 ```
 
 Normally one successful bootstrap is enough. Future feature and bug work should follow the harness left in the repository. Run Agentize Skill again only when you intentionally want to audit or repair that harness after the project or tooling changes.
-
-### Manual installation scope
-
-The open [Agent Skills specification](https://agentskills.io/specification) standardizes the Skill directory contents, not a universal installation path. Follow the active host's documentation.
-
-For example, [Codex discovers Skills from several scopes](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills). A reusable user-scoped installation normally uses:
-
-```text
-~/.agents/skills/agentize-skill/
-```
-
-A repository-scoped installation uses:
-
-```text
-<repository>/.agents/skills/agentize-skill/
-```
-
-The first is available across repositories for that user; the second is limited to the repository tree. Other hosts may use different conventions, so `.agents/skills` is not a universal requirement.
-
-User scope is recommended because Agentize Skill is a one-time bootstrap tool, not a target-project dependency. If a host installs it inside the target repository, the scanner excludes that exact Skill package from project evidence. Agentize Skill does not modify the target's ignore, formatter, Lint, typecheck, test, build, package, or CI configuration merely to accommodate its own files; move the installation to user scope if it interferes with project checks.
 
 ## Scanner
 
