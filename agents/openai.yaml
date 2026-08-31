@@ -1,4 +1,4 @@
 interface:
   display_name: "Agentize Skill"
-  short_description: "Bootstrap a repository-owned AI development harness"
-  default_prompt: "Use $agentize-skill once to bootstrap this repository with a self-contained, human-in-the-loop AI development harness using the smallest evidence-backed changes."
+  short_description: "Build a repository-owned context and delivery harness"
+  default_prompt: "Use $agentize-skill to build the smallest repository-owned harness for task-relevant context, verifiable outcomes, and confirmed durable knowledge."

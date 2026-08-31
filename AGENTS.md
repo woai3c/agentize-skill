@@ -8,7 +8,7 @@ that repository.
 
 - `SKILL.md`: activation, safety, coordination, and handoff boundary.
 - `references/assessment.md`: evidence and capability classification.
-- `references/delivery-workflow.md`: normative development-stage and return-loop contract.
+- `references/delivery-workflow.md`: normative context/evidence lifecycle, development-stage, and return-loop contract.
 - `references/artifacts.md`: adaptive repository output selection and contents.
 - `references/compatibility.md`: multi-host and provider-specific reconciliation.
 - `scripts/scan_repo.py` and `scripts/scan_repo.cjs`: dependency-free, read-only repository inventory implementations with one shared contract.

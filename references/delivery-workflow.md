@@ -45,6 +45,59 @@ the ideal contract, the repository's evidence state, the operational status defi
 the current task. Never represent instructions or a generated file as active
 automation.
 
+## Context and evidence lifecycle
+
+The stages above form a context-and-evidence lifecycle, not a request to load the
+entire repository, history, or prior conversation into every context window. The
+workflow keeps four kinds of information distinct:
+
+| Information | Role | Normal lifetime |
+| --- | --- | --- |
+| Intent Context | Goal, constraints, Acceptance Criteria, and authorized human decisions define what should happen. | Remains authoritative while the owning request, specification, or decision is current. |
+| Repository Context | Code, tests, schemas, configuration, maintained documentation, and decisions describe how the repository works and why. | Remains in its semantic owner and is revalidated when scope or currentness matters. |
+| Task Evidence | Accepted plans, candidate revisions, verification results, findings, exclusions, and decisions show what this change has established. | Stays bound to the task and exact candidate unless part of it passes the Knowledge Promotion Gate. |
+| Durable Knowledge | Confirmed, non-obvious, reusable meaning that should change future work. | Lives in the smallest maintained semantic owner and is revised or removed when stale. |
+
+Repository knowledge can become more accurate and complete while a task's
+working context remains bounded. Each consequential stage should receive the
+smallest sufficient high-signal packet for its decision, produce evidence tied
+to the current candidate, and pass forward only what the next stage needs. Raw
+conversation, broad search output, and transient implementation detail remain
+task material; they do not become durable context by accumulation.
+
+### Context Selection Gate
+
+Before a consequential stage or fresh session relies on material context, select
+and check it against all of these conditions:
+
+- **Relevant:** it can change a decision, action, risk, or verification claim for
+  the current goal and stage.
+- **Authoritative:** its source is appropriate for the question; actual behavior,
+  intended policy, rationale, and human decisions are not silently conflated.
+- **Applicable:** its path, component, host, environment, version, branch, or
+  candidate scope covers the work being judged.
+- **Current:** volatile facts and previously assembled packets are revalidated
+  against the current source and candidate when later changes could invalidate
+  them.
+- **Coherent:** contradictions, missing evidence, `Inferred` claims, and
+  `Unknown` questions remain visible rather than being flattened into certainty.
+- **Sufficient but bounded:** the packet contains enough surrounding evidence to
+  avoid a local or misleading conclusion, without replaying the whole repository
+  or implementation history.
+
+File presence, a prior Agent summary, a passing test, or an earlier review packet
+does not by itself satisfy this gate. If a missing or conflicting fact could
+change intended behavior or a consequential plan, return to Specify or Explore
+and route the decision to the authoritative owner. If it only limits a narrower
+claim, record the uncertainty and exclusion with that claim.
+
+Use concise routing and ordinary repository search by default. Add an index,
+retrieval script, generated context map, vector store, or other retrieval system
+only when repository scale or repeated measured failures justify its ownership
+and maintenance cost. The write-side [Knowledge Promotion
+Gate](#knowledge-promotion-gate) determines which task discoveries may become
+future Repository Context.
+
 ## Full path and fast path
 
 Use the full planning and review path for non-trivial or consequential work. A
@@ -470,6 +523,8 @@ ask the responsible person before retrying or compensating.
 
 ## 10. Continuous Knowledge Capture
 
+### Knowledge Promotion Gate
+
 Knowledge capture runs throughout the task and is the primary learning path.
 Whenever planning, requirement clarification, Human feedback, implementation,
 debugging, Targeted Runtime Verification, tests, independent or platform AI
@@ -513,11 +568,15 @@ business rules to product/domain ownership, architecture rules to architecture
 or a decision record, development conventions to contribution guidance,
 verification rules to testing guidance, and operational knowledge to runbooks.
 Agent-wide routing stays concise in the instruction entrypoint. Keep the semantic
-owner of intent, rationale, scope, and exceptions distinct from mechanical
-enforcement. When a confirmed rule can be enforced cheaply and deterministically,
-add a test, lint, type, schema, architecture check, script, or CI gate rather than
-relying on prose alone. A fully mechanical convention may be owned by its tool
-configuration, with documentation linking to the command instead of duplicating it.
+owner of intent, rationale, applicable scope, and exceptions distinct from
+mechanical enforcement. When a fact can expire or varies by version, branch,
+environment, or provider, record the authoritative source and a meaningful event
+that requires revalidation. Do not add volatile timestamps or metadata ceremony
+to stable facts merely for appearance. When a confirmed rule can be enforced
+cheaply and deterministically, add a test, lint, type, schema, architecture check,
+script, or CI gate rather than relying on prose alone. A fully mechanical
+convention may be owned by its tool configuration, with documentation linking to
+the command instead of duplicating it.
 
 ### Adoption evidence for feedback-derived knowledge
 

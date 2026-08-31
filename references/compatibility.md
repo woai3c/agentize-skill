@@ -51,6 +51,12 @@ the requested workflow, verify only the relevant questions:
 | Runtime interaction | Which applicable Web/UI, API, database/migration, worker/queue, or CLI/script surface the Agent can actually exercise in a safe local or test environment; how it supplies approved inputs and observes results; and whether the capability survives in future sessions. For Web/UI, include browser control and Network/console/log access. |
 | Human interaction | How clarification, rejection feedback, plan decisions, local product acceptance, conditional preview/staging acceptance, and consequential release authority reach the responsible person. |
 
+Context delivery proves only that a host can expose material to an Agent. It does
+not prove that the material is relevant, authoritative, current, or appropriately
+scoped for the task. After resolving host discovery and refresh behavior, apply
+the [Context Selection Gate](delivery-workflow.md#context-selection-gate) to the
+content used by each consequential stage.
+
 Classify a consequential control by what actually supplies it:
 
 - `advisory`: prompt, instruction, convention, or review guidance interpreted

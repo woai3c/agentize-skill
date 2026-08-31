@@ -74,6 +74,7 @@ be strong in one, missing another, and have no need for a third.
 | Orientation | Purpose, entry points, and repository map are discoverable quickly. | README is marketing-only; maps list every folder without explaining ownership. |
 | Scoped instructions | The applicable instruction file says what differs from normal agent behavior. | One giant global file; duplicate provider files; nested rules contradict parents. |
 | Context delivery | Relevant hosts discover the intended instruction chain, precedence and refresh boundary. | A file exists but no target host reads it; nested rules are loaded too late; an edit is assumed visible in an already-running session. |
+| Task-scoped context selection | Each consequential stage can assemble the smallest sufficient set of relevant, authoritative, applicable, current, and coherent context, while preserving conflicts and uncertainty. | The whole repository or prior chat is loaded by default; file presence is mistaken for authority; stale packets survive candidate changes; scope or contradictions disappear from summaries. |
 | Architecture context | Boundaries, dependencies, data flow, and important invariants are findable. | A stale diagram; directory tree presented as architecture; unwritten cross-module constraints. |
 | Domain context | Non-obvious business rules and vocabulary have an owned source of truth. | Rules live only in prompts, tickets, or tests; plausible facts are guessed. |
 | Work definition | Consequential work has discoverable goals, constraints, success and acceptance criteria, scope, and unresolved questions in an existing owned system. | Imperative implementation steps with no desired outcome; tests derived only from the proposed code; no owner for ambiguous intent. |
@@ -86,15 +87,16 @@ be strong in one, missing another, and have no need for a third.
 | Draft/Ready MR/PR, platform AI review, and CI | Reviewed-branch projects allow Draft MR/PR early without treating it as ready, gate Ready for Review on local verification, applicable independent pre-acceptance review, and Human Local Acceptance, distinguish local review from configured platform AI review, and run the complete applicable per-change MR/PR CI gate set. Every fix returns through local verification and review before MR/PR update and gate reruns. | Draft creation is treated as readiness; local review is confused with a remote required gate; a YAML file is assumed active without a runner or permissions; a fix bypasses rerun gates; a green aggregate ignores a failed, cancelled, missing, or unexpectedly skipped result assigned to the MR/PR boundary. |
 | E2E placement and evidence | A cost- and risk-aware policy places targeted or full E2E per MR/PR, at test/staging promotion, on a schedule, before release, or in an explicit combination. Each path names its suite, trigger, revision/candidate, environment/data, cost, owner, blocking target, and failure route; task evidence states when E2E did not run. | Full E2E is forced onto every MR/PR regardless of cost; expensive E2E is deferred with no trigger or owner; framework presence is called readiness; a scheduled result is attributed to a different change; “all regression passed” is claimed when only MR/PR gates ran. |
 | Delivery and observation | Applicable merge, release, rollback, operational checks, and success signals are discoverable with their owners and permissions. | Deployment is mixed into routine checks; no rollback or success signal; production access is assumed. |
-| Continuous knowledge capture | During implementation, authoritative durable, non-obvious, reusable knowledge is routed into the current change and the smallest semantic owner; deterministic enforcement is added separately when proportionate. | Every note is deferred until merge; human corrections remain only in chat; unconfirmed inference becomes policy; detailed knowledge is left in root instructions; a test is treated as the sole source of consequential business intent. |
+| Continuous knowledge capture | During implementation, authoritative durable, non-obvious, reusable knowledge is routed into the current change and the smallest semantic owner; stale knowledge is revised or removed, and deterministic enforcement is added separately when proportionate. | Every note is deferred until merge; knowledge is append-only; human corrections remain only in chat; unconfirmed inference becomes policy; detailed knowledge is left in root instructions; a test is treated as the sole source of consequential business intent. |
 | Optional post-merge knowledge audit | When the project chooses and configures it, a real merge trigger can inspect only late lifecycle evidence and open a separate human-reviewed knowledge change when continuous capture missed something. | The optional backstop is presented as mandatory or already active; the audit re-summarizes everything; instructions are mistaken for a trigger; automation writes directly to the default branch. |
-| Knowledge provenance | Observed, Inferred, and Unknown claims retain evidence, confidence where relevant, impact, and decision ownership. | Model interpretation is presented as fact; current behavior silently becomes a business rule. |
+| Knowledge provenance | Observed, Inferred, and Unknown claims retain evidence, applicable scope, confidence where relevant, impact, decision ownership, and a revalidation trigger when the fact can expire. | Model interpretation is presented as fact; current behavior silently becomes a business rule; version- or environment-specific knowledge is treated as timeless. |
 | Knowledge adoption | Feedback-derived knowledge has authoritative semantic meaning, final-state evidence of adoption, and a recorded disposition before promotion. | A comment, resolved thread, “fixed” claim, same-file edit, or merge is treated as proof that the proposed lesson was adopted. |
 | Parallel readiness | When parallel work is actually used, tasks, worktrees, shared resources, and integration ownership are separable. | More agents are added before verification is reliable; sessions share ports, state, or generated files without coordination. |
 | Host enforcement | Consequential restrictions identify their real consumer, enforcement layer, failure behavior and tested scope. | Prompt-only guidance is called a sandbox; an unused policy file is called enforced; approval, review and product acceptance are conflated. |
 | Safety and boundaries | Destructive, costly, credentialed, generated, and release paths are clear. | Blanket prohibitions; copied secrets; release commands mixed into routine verification. |
 | Knowledge gaps | Unknowns are explicit, evidence-backed questions with a path to resolution. | Confident invented rules; vague TODO lists; questions with no impact or owner. |
 | Maintainability | Artifacts have clear owners and update triggers and survive without Agentize Skill. | Generated banners; timestamps that churn; duplicated facts; an external runtime is required. |
+| Effectiveness evidence | When harness effectiveness is evaluated, task outcome and evidence quality establish the baseline; reliability, context quality, human outcome, and learning quality retain a defined scope; tokens, cost, latency, and tool calls are compared per successful task only after the quality bar is met. | Faster output or fewer tokens are called success despite worse outcomes; self-report replaces observable evidence; merge or keep rate is used without a task or cohort boundary; telemetry is added only to produce a score. |
 
 Use these statuses:
 
@@ -140,6 +142,39 @@ things. An Agentize Skill run can finish honestly with unresolved work, but if a
 request-critical capability is not `READY` and has no safe fallback or human
 decision path, the handoff must describe the repository as only partially
 prepared. This is an outcome rule, not another user-selectable mode.
+
+### Harness effectiveness evidence
+
+Capability readiness says whether a path can operate, and a task outcome says
+what happened on one candidate. Neither alone proves that the harness improves
+work over time. When the user requests an effectiveness evaluation, or the
+repository already owns representative harness tasks, Agent traces, or evaluation
+telemetry, interpret the available evidence in this order:
+
+1. **Task outcome:** Acceptance Criteria, required regressions, and observable
+   final state establish whether the work succeeded.
+2. **Reliability:** repeated or comparable tasks show whether success is stable
+   rather than an exceptional attempt.
+3. **Context quality:** selected context is relevant, accurate, sufficient,
+   current, scoped, and explicit about conflicts or uncertainty.
+4. **Human outcome:** acceptance, useful findings, retained changes, and required
+   human correction show whether the result reduced avoidable rework without
+   hiding decisions that still require a person.
+5. **Learning quality:** promoted knowledge is accurate, reused when relevant,
+   and revised or removed before staleness becomes context noise.
+6. **Efficiency:** only after a declared quality baseline is met, compare tokens,
+   monetary cost, latency, tool calls, or compute per successful task.
+
+Define the task set, candidate, model or host, permissions, tools, environment,
+quality baseline, and grader or human decision surface before comparing runs.
+Keep raw measures separate instead of turning them into one universal score, and
+do not infer causality from a merge, acceptance, or keep-rate change alone.
+
+Do not install telemetry, invent a benchmark, or add a required reporting surface
+merely to make this row look complete. When no maintained evaluation system or
+request exists, report effectiveness measurement as an optional investment, not
+as a missing minimum harness capability. A longitudinal evaluation consumes the
+five evidence layers above; it is not a sixth operational status.
 
 ## Scenario handling
 

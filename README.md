@@ -4,7 +4,7 @@
 
 **Make your codebase agent-ready.**
 
-Agentize Skill is a vendor-neutral coding-agent Skill that bootstraps an existing repository for reliable, human-in-the-loop AI development. It inspects the project, repairs or adds the smallest useful repository-owned context and workflow, reports capabilities that still need setup, verifies its changes, and exits.
+Agentize Skill is a vendor-neutral coding-agent Skill that bootstraps an existing repository for reliable, human-in-the-loop AI development. It establishes an evidence-backed context and delivery lifecycle: each stage selects the smallest current authoritative context needed for its decision, produces reviewable evidence, and promotes only confirmed durable knowledge. It inspects the project, repairs or adds the smallest useful repository-owned context and workflow, reports capabilities that still need setup, verifies its changes, and exits.
 
 > **Agentize Skill should leave behind the system, not become the system.**
 
@@ -23,7 +23,7 @@ To keep Agentize Skill only in the repository you are currently preparing, repla
 Then open the repository you want to prepare, select or invoke the installed Skill using that host's normal mechanism, and ask:
 
 ```text
-Use Agentize Skill to bootstrap this existing repository as a self-contained, human-in-the-loop AI development harness. Preserve its current tools and conventions, make the smallest evidence-backed changes, expose unsupported capabilities and human setup honestly, verify the result, and finish with a scoped Harness Capability Report and separate task outcomes.
+Use Agentize Skill to bootstrap this existing repository as a self-contained, human-in-the-loop AI development harness. Preserve its current tools and conventions, make the smallest evidence-backed changes so agents select task-relevant current context, produce verifiable outcomes, and promote only confirmed durable knowledge; expose unsupported capabilities and human setup honestly, verify the result, and finish with a scoped Harness Capability Report and separate task outcomes.
 ```
 
 If the newly installed Skill is not visible, refresh the host's Skill list or start a new agent session. See [Install and use](#install-and-use) for the installation contract, a documented Codex example, read-only audits, and focused repairs.
@@ -33,8 +33,8 @@ If the newly installed Skill is not visible, refresh the host's Skill list or st
 A normal bootstrap run:
 
 1. binds the exact target and inventories its existing agent instructions, documentation, manifests, commands, tests, CI, runtime paths, and learning mechanisms without executing project code during discovery or treating a nested Agentize Skill installation as project evidence;
-2. compares direct evidence with the ideal AI-native workflow and distinguishes observed facts, inference, unknowns, operational readiness, and current-task outcomes;
-3. repairs existing sources of truth or adds only the smallest missing repository-owned instruction, context, verification, review, acceptance, and knowledge-capture paths;
+2. compares direct evidence with the ideal AI-native workflow and distinguishes observed facts, inference, unknowns, operational readiness, current-task outcomes, task-scoped context selection, and durable-knowledge promotion;
+3. repairs existing sources of truth or adds only the smallest missing repository-owned instruction, context-routing, verification, review, acceptance, and knowledge-capture paths;
 4. creates focused setup guidance when credentials, permissions, accounts, test data, browser control, runners, external settings, or model integration still require a human;
 5. verifies the resulting paths, claims, commands, checks, and diff, then hands off a scoped Harness Capability Report.
 
@@ -55,6 +55,8 @@ An explicit `audit only`, `report only`, or `do not modify` request is static an
 
 The diagram shows the ideal full path, not a mandatory checklist for every task or a claim that every pictured capability is active. Independent Agent Review applies when a suitable fresh-context review path is available or repository policy requires it; Platform AI Review applies only when configured. Fast-path work may omit independent Agent review when repository policy considers deterministic checks and self-review proportionate.
 
+Two gates run across the pictured stages. The Context Selection Gate checks that each consequential stage receives relevant, authoritative, applicable, current, coherent, and sufficient-but-bounded context. The Knowledge Promotion Gate admits a task discovery into the repository only when its meaning is authoritative and it is durable, non-obvious, and reusable. Repository knowledge can therefore become more accurate and complete without making every task's working context larger.
+
 The diagram intentionally compresses the feedback arrows so the main lifecycle stays readable. A requirement or accepted-plan problem returns to Specify or Plan; an implementation or review defect returns through Execute, the relevant verification, applicable independent re-review, and Human Acceptance.
 
 [![Ideal AI-powered development workflow showing planning, verification, conditional independent review, human acceptance, MR/PR gates, and knowledge capture](docs/workflow.en.png)](docs/workflow.en.png)
@@ -65,13 +67,13 @@ Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verif
   -> Create / Mark MR/PR Ready for Review <-> MR/PR CI + [Platform AI Review when configured] -> Merge
 ```
 
-Continuous Knowledge Capture spans active development. Full E2E follows the repository's explicit cost- and risk-aware policy and may run per MR/PR, at test or staging promotion, on a schedule, before release, or in a documented combination. Shipping and production observation are conditional on the kind of project. Automatic Post-Merge Knowledge Audit is an optional configured backstop for durable knowledge missed late in the lifecycle, not a minimum daily step.
+Continuous Knowledge Capture spans active development and revises or removes stale knowledge instead of growing append-only documentation. Full E2E follows the repository's explicit cost- and risk-aware policy and may run per MR/PR, at test or staging promotion, on a schedule, before release, or in a documented combination. Shipping and production observation are conditional on the kind of project. Automatic Post-Merge Knowledge Audit is an optional configured backstop for durable knowledge missed late in the lifecycle, not a minimum daily step.
 
-Agentize Skill creates or repairs only the repository-owned pieces supported by evidence, available tools, authorization, and proportionate cost. It keeps the workflow contract, repository evidence, capability readiness, human setup, and current execution results separate. The detailed responsibility and return-loop rules live in [`references/delivery-workflow.md`](references/delivery-workflow.md).
+Agentize Skill creates or repairs only the repository-owned pieces supported by evidence, available tools, authorization, and proportionate cost. It keeps the workflow contract, repository evidence, capability readiness, human setup, and current execution results separate. The detailed context, evidence, responsibility, and return-loop rules live in [`references/delivery-workflow.md`](references/delivery-workflow.md).
 
 | Agentize Skill can establish when supported | Human or external setup may still be required |
 | --- | --- |
-| Concise Agent instructions and context routing; an adaptive workflow contract; verified project commands and verification guidance; a Harness Capability Report; focused Setup Guides; and safe repository-local tests, rules, scripts, or CI definitions when the project evidence and authorization justify them. | Product intent, plan approval, risk decisions, and acceptance; credentials, accounts, test identities and data; browser or runtime environments; external CI and forge settings; branch protection; platform Reviewer Agent runners and model integration; preview or staging; observability; deployment permissions; and merge-trigger automation. |
+| Concise Agent instructions and task-scoped context routing; an adaptive workflow contract; a durable-knowledge promotion path; verified project commands and verification guidance; a Harness Capability Report; focused Setup Guides; and safe repository-local tests, rules, scripts, or CI definitions when the project evidence and authorization justify them. | Product intent, plan approval, risk decisions, and acceptance; credentials, accounts, test identities and data; browser or runtime environments; external CI and forge settings; branch protection; platform Reviewer Agent runners and model integration; preview or staging; observability; deployment permissions; and merge-trigger automation. |
 
 If a pictured stage is unavailable, Agentize Skill records its scoped status, consequence, fallback, and required setup. A generated instruction, workflow file, or template is not proof that the corresponding automation is active.
 
@@ -89,6 +91,8 @@ Every applicable capability is reported with one operational status:
 | `NOT APPLICABLE` | The capability does not apply to this repository or scope. |
 
 Current-task checks use `PASSED`, `FAILED`, `NOT EXECUTED`, or `NOT APPLICABLE` separately. A file, dependency, workflow definition, or green test is not by itself proof that a capability is ready or that the implementation matches human intent.
+
+Operational status is not an effectiveness score. When representative harness-evaluation evidence exists or an evaluation is requested, Agentize Skill reads it quality-first: task outcome and evidence quality, then reliability, context quality, human outcome, and learning quality. Tokens, cost, latency, and tool calls are compared per successful task only after the declared quality baseline is met. It does not install telemetry or invent a benchmark merely to make the workflow look measurable.
 
 For artifacts changed by the bootstrap, the handoff separately records the highest repository-delivery evidence: `WORKTREE ONLY`, `COMMITTED`, or `PUSHED`. `PLATFORM ACTIVE` is a separate, revision-specific claim used only when the forge or runner behavior is directly verified. A local PR template or CI file is not presented as active on the forge.
 
@@ -165,7 +169,7 @@ Agentize Skill tries the Node.js scanner first, then Python when the first imple
 
 - `SKILL.md` contains activation, safety, coordination, and handoff rules.
 - `references/assessment.md` owns evidence and capability classification.
-- `references/delivery-workflow.md` owns the durable development-stage and return-loop contract.
+- `references/delivery-workflow.md` owns the durable context/evidence lifecycle, development-stage, and return-loop contract.
 - `references/artifacts.md` owns adaptive repository output selection and artifact contents.
 - `references/compatibility.md` owns multi-host and provider-specific reconciliation.
 - `scripts/scan_repo.py` and `scripts/scan_repo.cjs` implement the same dependency-free scanner contract.

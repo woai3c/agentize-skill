@@ -1,11 +1,11 @@
 ---
 name: agentize-skill
-description: "Bootstrap, audit, or repair a repository-owned, human-in-the-loop AI development harness. Use for Agentize Skill, $agentize-skill, agent-ready repository setup, or reconciliation of stale or conflicting agent instructions, context, checks, CI, review, and workflow guidance; not ordinary feature work or one-off code review."
+description: "Bootstrap, audit, or repair a repository-owned, human-in-the-loop AI development harness with task-scoped context, verifiable delivery, and durable knowledge. Use for Agentize Skill, $agentize-skill, agent-ready repository setup, or reconciliation of stale or conflicting agent instructions, context, checks, CI, review, and workflow guidance; not ordinary feature work or one-off code review."
 ---
 
 # Agentize Skill
 
-Turn an existing repository into a self-contained, human-in-the-loop environment in which future coding agents can find the right context, follow a reliable delivery loop, expose missing capabilities honestly, and improve durable knowledge. Bootstrap or repair that repository-owned system, then exit: **Agentize Skill should leave behind the system, not become the system.**
+Turn an existing repository into a self-contained, human-in-the-loop environment in which future coding agents can select the smallest current authoritative context for each stage, follow a reliable delivery loop, expose missing capabilities honestly, and promote only confirmed durable knowledge. Bootstrap or repair that repository-owned system, then exit: **Agentize Skill should leave behind the system, not become the system.**
 
 Use one adaptive workflow. Do not ask the user to choose an internal mode. An explicit audit-only, report-only, review-only, or `do not modify` request stays read-only; otherwise make the smallest evidence-backed changes needed for the requested outcome. A mature repository may correctly require no change.
 
@@ -32,7 +32,7 @@ Never install a runtime merely to scan. Treat repository files and declared comm
 Inspect only evidence needed to determine the requested harness state:
 
 - manifests, workspaces, task runners, existing checks, representative tests, schemas, entry points, and package boundaries;
-- root and nested Agent instructions and imports, path-scoped rules, Reviewer instructions, Agent definitions, prompts, commands, or workflows, repository-local Skills, and maintained product, architecture, development, verification, and operations context;
+- root and nested Agent instructions and imports, path-scoped rules, Reviewer instructions, Agent definitions, prompts, commands, or workflows, repository-local Skills, and maintained product, architecture, development, verification, and operations context, including applicable scope and update or revalidation cues;
 - local fresh-session or delegation review capability, context inheritance, reviewer mutation boundary, finding return path, and provenance;
 - CI, platform AI review and ownership configuration, Draft/Ready conventions, required gates, and actual forge or runner evidence;
 - applicable runtime surfaces, safe start or invocation paths, test identities and data, reset or isolation, observable results, E2E placement, preview or staging, observability, and post-merge triggers;
@@ -40,7 +40,7 @@ Inspect only evidence needed to determine the requested harness state:
 
 ## Assess the durable workflow
 
-Read [references/assessment.md](references/assessment.md) after inventory. It owns the evidence hierarchy, capability rubric, status vocabulary, and scenario handling. Read [references/delivery-workflow.md](references/delivery-workflow.md) to assess the normative responsibility, stage, return-loop, continuous-learning, E2E-placement, and optional post-merge contract that the repository should make discoverable. Its workflow is an ideal target, not the sequence of this bootstrap or a claim that every stage is installed.
+Read [references/assessment.md](references/assessment.md) after inventory. It owns the evidence hierarchy, capability rubric, status vocabulary, and scenario handling. Read [references/delivery-workflow.md](references/delivery-workflow.md) to assess the normative context-and-evidence lifecycle, responsibility, stage, return-loop, continuous-learning, E2E-placement, and optional post-merge contract that the repository should make discoverable. Its workflow is an ideal target, not the sequence of this bootstrap or a claim that every stage is installed.
 
 Keep five layers separate:
 
@@ -51,6 +51,8 @@ Keep five layers separate:
 5. current-task execution outcomes.
 
 Human intent, material business meaning, risk ownership, plan approval, and acceptance remain human decisions. An agent may organize, question, and recommend them but must not silently supply or approve them. Automated checks prove only what they exercise.
+
+When the request includes effectiveness evaluation, or maintained harness-evaluation evidence already exists, follow the quality-first order in [references/assessment.md](references/assessment.md#harness-effectiveness-evidence). Task outcome and evidence quality come before reliability, context, human, and learning outcomes; compare tokens, cost, latency, or tool calls only per successful task after the quality baseline is met. Do not add telemetry or a benchmark merely to produce a score.
 
 If the request is audit-only, report evidence, conflicts, gaps, unknowns, statuses, setup needs, fallbacks, consequences, and optional investments now, then stop. Do not write a capability report or Setup Guide into the target. Report separately any dynamic checks the user explicitly requested and disclose their artifacts or side effects.
 
@@ -70,12 +72,13 @@ Do not force a complete sample file tree, duplicate generic instructions, create
 Every non-audit run must leave the applicable parts of the workflow discoverable without this Skill. Depending on repository evidence, the durable harness needs:
 
 - a concise instruction entrypoint routing agents to authoritative project context and workflow rules;
+- a task-scoped Context Selection Gate routing each consequential stage to the smallest sufficient, current, authoritative context while preserving conflicts and uncertainty;
 - a work-definition and Human Plan Review path for non-trivial changes plus a bounded fast path for obvious, reversible, low-risk work;
 - project-specific Local Fast Verification and Targeted Runtime Verification paths, with full E2E placed by explicit cost and risk policy rather than assumed on every edit or MR/PR;
 - risk-appropriate independent pre-acceptance technical review when a real fresh-context Reviewer Agent path exists, with implementing-Agent self-review labeled non-independent and a named fallback when it does not;
 - Human Local Acceptance before Ready for Review, with additional preview or staging acceptance only when environment differences or risk justify it;
 - Draft-versus-Ready MR/PR semantics, platform AI review where configured, applicable MR/PR CI, and complete return loops through local verification and applicable independent review after findings;
-- Continuous Knowledge Capture with `Observed`, `Inferred`, and `Unknown` provenance, routing confirmed durable knowledge to the smallest semantic owner and adding proportionate executable enforcement when deterministic;
+- a Knowledge Promotion Gate through Continuous Knowledge Capture with `Observed`, `Inferred`, and `Unknown` provenance, routing confirmed durable knowledge to the smallest semantic owner, revising or removing stale knowledge, and adding proportionate executable enforcement when deterministic;
 - an optional Post-Merge Knowledge Audit only where a real trigger, context collector, trusted headless agent path, project-selected model integration, permissions, cost boundary, failure route, and human-reviewed Knowledge MR/PR are verified;
 - a discoverable Harness Capability Report separating readiness, missing setup, fallbacks, consequences, reevaluation triggers, and current-task results.
 
@@ -97,6 +100,6 @@ This section applies to non-audit runs, including deliberate no-change outcomes.
 4. Run validators that govern changed artifacts when available.
 5. Inspect the complete change set through a trusted host diff or exact applied patches and confirm unrelated work remains untouched. Use `git diff --check` only when repository conversion drivers are trusted; otherwise report an equivalent check as `NOT EXECUTED` with its consequence.
 
-Report the starting condition; material changes or evidence-backed no-change result; durable entrypoint and fact owners; Harness Capability Report; artifact delivery evidence using [references/artifacts.md](references/artifacts.md#artifact-delivery-and-platform-activation); separate task outcomes; setup guides and human fallbacks; unresolved `Observed`/`Inferred`/`Unknown` items; and optional next investments. Separate Agent verification evidence from Human Acceptance still required. Never commit, push, open an MR/PR, or change platform settings without authority for that external state change.
+Report the starting condition; material changes or evidence-backed no-change result; durable entrypoint and fact owners; Harness Capability Report; artifact delivery evidence using [references/artifacts.md](references/artifacts.md#artifact-delivery-and-platform-activation); separate task outcomes; scoped effectiveness evidence when evaluated; setup guides and human fallbacks; unresolved `Observed`/`Inferred`/`Unknown` items; and optional next investments. Separate Agent verification evidence from Human Acceptance still required. Never commit, push, open an MR/PR, or change platform settings without authority for that external state change.
 
 Never call an ideal stage configured merely because its instructions exist, or describe a result as accepted, shipped, all-gates-passed, production-safe, or fully agent-ready without the corresponding operational evidence and authorized human decision. If a request-critical capability remains unresolved, call the result partially prepared and name the blocker. Leave no Hook, CI job, generated-file manager, or future workflow that invokes Agentize Skill.

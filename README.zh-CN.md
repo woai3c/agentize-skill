@@ -4,7 +4,7 @@
 
 **让现有代码库成为 Agent-ready Repository。**
 
-Agentize Skill 是一个厂商中立的 Coding Agent Skill，用于把现有仓库一次性改造成可靠、Human-in-the-loop 的 AI 开发环境。它会检查项目，修复或补充最小且有价值的仓库自有上下文与工作流，报告仍需配置的能力，验证变更，然后退出。
+Agentize Skill 是一个厂商中立的 Coding Agent Skill，用于把现有仓库一次性改造成可靠、Human-in-the-loop 的 AI 开发环境。它建立的是一条由证据约束的上下文与交付生命周期：每个阶段只选择当前决策所需、权威且仍然有效的最小充分上下文，产生可审查证据，只有经过确认的长期知识才会进入仓库的长期知识源。它会检查项目，修复或补充最小且有价值的仓库自有上下文与工作流，报告仍需配置的能力，验证变更，然后退出。
 
 > **Agentize Skill should leave behind the system, not become the system.**
 
@@ -23,7 +23,7 @@ Agentize Skill 是一个厂商中立的 Coding Agent Skill，用于把现有仓�
 然后打开需要改造的仓库，通过当前宿主的常规方式选择或调用已安装 Skill，并发送：
 
 ```text
-使用 Agentize Skill 把这个现有仓库一次性改造成可独立运行、Human-in-the-loop 的 AI 开发 Harness。保留当前工具和约定，只做最小且有证据支持的变更，诚实暴露尚不支持的能力和人工配置，验证最终结果，并分别交接有明确作用域的 Harness Capability Report 和本次任务结果。
+使用 Agentize Skill 把这个现有仓库一次性改造成可独立运行、Human-in-the-loop 的 AI 开发 Harness。保留当前工具和约定，只做最小且有证据支持的变更，使 Agent 能选择与任务相关且当前有效的上下文、产出可验证结果，并且只沉淀经过确认的长期知识；诚实暴露尚不支持的能力和人工配置，验证最终结果，并分别交接有明确作用域的 Harness Capability Report 和本次任务结果。
 ```
 
 如果新安装的 Skill 尚未出现，请刷新宿主的 Skill 列表或新建一个 Agent 会话。安装契约、有文档依据的 Codex 示例、只读审计和聚焦修复说明见[安装与使用](#安装与使用)。
@@ -33,8 +33,8 @@ Agentize Skill 是一个厂商中立的 Coding Agent Skill，用于把现有仓�
 一次普通 Bootstrap 会：
 
 1. 绑定准确目标，并在 Discovery 阶段不执行项目代码、也不把仓库内嵌套安装的 Agentize Skill 当成项目证据的前提下，清点现有 Agent 指令、文档、Manifest、命令、测试、CI、运行时路径和知识学习机制；
-2. 用直接证据对照理想的 AI Native Workflow，并区分 Observed Fact、Inference、Unknown、Operational Readiness 和当前任务结果；
-3. 优先修复已有事实来源，只补充最小必要的仓库自有指令、上下文、验证、评审、验收和知识捕获路径；
+2. 用直接证据对照理想的 AI Native Workflow，并区分 Observed Fact、Inference、Unknown、Operational Readiness、当前任务结果、按任务选择上下文和长期知识晋升；
+3. 优先修复已有事实来源，只补充最小必要的仓库自有指令、上下文导航、验证、评审、验收和知识捕获路径；
 4. 当凭据、权限、账号、测试数据、浏览器控制、Runner、外部设置或模型接入仍需要人类处理时，生成聚焦的配置说明；
 5. 验证最终路径、能力声明、命令、检查和 Diff，并交接一份有明确作用域的 Harness Capability Report。
 
@@ -55,6 +55,8 @@ Agentize Skill 会让根 Agent 指令文件保持简洁并主要承担导航职�
 
 图片展示的是理想完整路径，不是所有任务都必须执行的清单，也不代表图中每项能力都已生效。只有具备合适的 Fresh-context Review 路径，或仓库 Policy 明确要求时，Independent Agent Review 才适用；Platform AI Review 仅在真实配置后适用。Repository Policy 认为确定性检查和 Self-review 已经足够时，Fast Path 可以省略独立 Agent Review。
 
+图中的所有阶段都受到两个 Gate 约束。Context Selection Gate 检查每个重要阶段拿到的上下文是否相关、权威、适用于当前作用域、仍然有效、没有隐藏冲突，并且充分但不过量。Knowledge Promotion Gate 只允许语义已经得到权威确认，同时满足 Durable、Non-obvious 和 Reusable 的任务发现进入仓库的长期知识源。因此，Repository Knowledge 可以越来越准确和完整，而单次任务的 Working Context 不需要随之膨胀。
+
 为了让主流程保持易读，图片有意简化了部分反馈箭头。需求或已接受方案本身有问题时，应返回 Specify 或 Plan；实现或评审发现缺陷时，应返回 Execute，并重新经过相关验证、适用的独立复审与 Human Acceptance。
 
 [![理想 AI 高效开发工作流，展示规划、自验证、条件适用的独立评审、人工验收、MR/PR Gate 与知识沉淀](docs/workflow.png)](docs/workflow.png)
@@ -65,13 +67,13 @@ Specify -> Explore -> Plan <-> Human Plan Review -> Execute <-> Local Fast Verif
   -> Create / Mark MR/PR Ready for Review <-> MR/PR CI + [已配置时 Platform AI Review] -> Merge
 ```
 
-Continuous Knowledge Capture 贯穿整个开发过程。Full E2E 遵循仓库明确的 Cost/Risk-aware Policy，可以放在每个 MR/PR、测试或预发布环境晋级、固定时间、Release 前，或采用有文档说明的组合策略。Ship 与生产观察只适用于相应类型的项目。自动 Post-Merge Knowledge Audit 只是用于检查开发后期遗漏 Durable Knowledge 的可选兜底，不是最小日常步骤。
+Continuous Knowledge Capture 贯穿整个开发过程；它会修订或删除过期知识，而不是让文档只增不减。Full E2E 遵循仓库明确的 Cost/Risk-aware Policy，可以放在每个 MR/PR、测试或预发布环境晋级、固定时间、Release 前，或采用有文档说明的组合策略。Ship 与生产观察只适用于相应类型的项目。自动 Post-Merge Knowledge Audit 只是用于检查开发后期遗漏 Durable Knowledge 的可选兜底，不是最小日常步骤。
 
-Agentize Skill 只会创建或修复有仓库证据、当前工具、授权和合理成本支持的仓库自有部分，并分别表达 Workflow Contract、Repository Evidence、Capability Readiness、Human Setup 和当前执行结果。详细的职责与返工循环规则位于 [`references/delivery-workflow.md`](references/delivery-workflow.md)。
+Agentize Skill 只会创建或修复有仓库证据、当前工具、授权和合理成本支持的仓库自有部分，并分别表达 Workflow Contract、Repository Evidence、Capability Readiness、Human Setup 和当前执行结果。详细的上下文、证据、职责与返工循环规则位于 [`references/delivery-workflow.md`](references/delivery-workflow.md)。
 
 | Agentize Skill 在条件支持时可以建立 | 仍可能需要人类或外部平台配置 |
 | --- | --- |
-| 简洁的 Agent 指令与上下文导航；适配仓库的 Workflow Contract；经过验证的项目命令与验证指南；Harness Capability Report；聚焦的 Setup Guide；以及在项目证据和授权支持时安全增加的仓库本地 Test、Rule、Script 或 CI 定义。 | 产品意图、Plan Approval、风险决策和 Acceptance；凭据、账号、测试身份与数据；Browser 或 Runtime Environment；外部 CI 与 Forge 设置；Branch Protection；平台 Reviewer Agent Runner 与模型接入；Preview 或 Staging；Observability；部署权限；Merge-trigger Automation。 |
+| 简洁的 Agent 指令与按任务选择的上下文导航；适配仓库的 Workflow Contract；长期知识晋升路径；经过验证的项目命令与验证指南；Harness Capability Report；聚焦的 Setup Guide；以及在项目证据和授权支持时安全增加的仓库本地 Test、Rule、Script 或 CI 定义。 | 产品意图、Plan Approval、风险决策和 Acceptance；凭据、账号、测试身份与数据；Browser 或 Runtime Environment；外部 CI 与 Forge 设置；Branch Protection；平台 Reviewer Agent Runner 与模型接入；Preview 或 Staging；Observability；部署权限；Merge-trigger Automation。 |
 
 如果图片中的某个阶段不可用，Agentize Skill 会记录它在明确作用域内的状态、影响、Fallback 和所需配置。生成一份指令、Workflow 文件或 Template，并不能证明对应自动化已经生效。
 
@@ -89,6 +91,8 @@ Agentize Skill 只会创建或修复有仓库证据、当前工具、授权和�
 | `NOT APPLICABLE` | 该能力不适用于当前仓库或作用域。 |
 
 当前任务中的检查另行使用 `PASSED`、`FAILED`、`NOT EXECUTED` 或 `NOT APPLICABLE`。一个文件、依赖、Workflow 定义或绿色测试，本身不能证明能力已经 Ready，也不能证明实现符合人类真实意图。
+
+Operational Status 不是效果评分。存在代表性的 Harness 评估证据，或用户要求评价工作流效果时，Agentize Skill 会按照质量优先的顺序解读：先看 Task Outcome 和证据质量，再看 Reliability、Context Quality、Human Outcome 和 Learning Quality。只有达到已声明的质量基线后，才比较每个成功任务的 Token、成本、延迟和 Tool Call。它不会仅为了让工作流显得可量化而安装 Telemetry 或虚构 Benchmark。
 
 对于本次 Bootstrap 修改的 Artifact，交接还会单独记录已由证据证明的最高仓库交付阶段：`WORKTREE ONLY`、`COMMITTED` 或 `PUSHED`。`PLATFORM ACTIVE` 是另一项独立且绑定 Revision 的声明，只有在 Forge 或 Runner 行为得到直接验证时才能使用。本地 PR Template 或 CI 文件不能被描述为已在 Forge 上生效。
 
@@ -165,7 +169,7 @@ Agentize Skill 会先尝试 Node.js 扫描器；如果第一套实现不可用�
 
 - `SKILL.md` 包含激活边界、安全、协调和交接规则。
 - `references/assessment.md` 负责证据与能力分类。
-- `references/delivery-workflow.md` 负责长期开发阶段和返工循环契约。
+- `references/delivery-workflow.md` 负责长期上下文/证据生命周期、开发阶段和返工循环契约。
 - `references/artifacts.md` 负责自适应 Repository Output 的选择和内容。
 - `references/compatibility.md` 负责多宿主与 Provider-specific 协调。
 - `scripts/scan_repo.py` 和 `scripts/scan_repo.cjs` 实现同一个无第三方依赖的扫描器契约。

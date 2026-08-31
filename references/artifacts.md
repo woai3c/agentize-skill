@@ -3,9 +3,9 @@
 Use existing names and locations when they already have clear ownership. The
 patterns below are options, not a scaffold to generate in every repository.
 The goal is a repository-owned AI development harness, not a collection of
-Markdown files. The responsibility and transition rules behind planning, Agent
-Verification, independent technical review, Human Local Acceptance, MR/PR review,
-delivery, and learning are defined in
+Markdown files. The responsibility and transition rules behind context selection,
+planning, Agent Verification, independent technical review, Human Local
+Acceptance, MR/PR review, delivery, and learning are defined in
 [delivery-workflow.md](delivery-workflow.md).
 
 ## Scope boundary
@@ -40,9 +40,9 @@ repository-specific information that changes an agent's decisions, such as:
 - generated, vendored, credentialed, destructive, or release-sensitive paths;
 - non-obvious architectural or domain invariants;
 - links to deeper authoritative documents and nested instructions;
-- a concise route to the ideal development path, current Harness Capability
-  Report, fast path, human decision points, continuous knowledge owner, and any
-  configured post-merge audit;
+- a concise route to task-scoped context selection, the ideal development path,
+  current Harness Capability Report, fast path, human decision points,
+  continuous knowledge owner, and any configured post-merge audit;
 - update triggers for docs, schemas, snapshots, or generated artifacts.
 
 Do not restate the host agent's generic behavior, teach the programming
@@ -62,6 +62,9 @@ The contract should state, in project terms:
 
 - when the full planning and Human Plan Review loop applies and what qualifies
   for the fast path;
+- how each consequential stage selects the smallest sufficient current and
+  authoritative context, exposes conflicts or uncertainty, and passes forward
+  candidate-bound evidence without replaying full conversations;
 - where goal, constraints, success criteria, acceptance criteria, risk, and
   unknowns live;
 - which targeted and broad checks make up Agent Verification;
@@ -86,6 +89,31 @@ enforcement](#knowledge-ownership-and-executable-enforcement), creating only the
 focused files supported by real content. Do not generate empty directories,
 rename maintained sources, or create a complete example tree for appearance.
 
+## Context routing and stage packets
+
+Implement the read side of the workflow through existing owned surfaces first.
+The root instruction source and durable workflow should let a future Agent follow
+the [Context Selection Gate](delivery-workflow.md#context-selection-gate) without
+Agentize Skill by making these operations discoverable:
+
+- resolve the applicable instruction chain and smallest semantic owners for the
+  goal, changed paths, runtime surface, and current stage;
+- distinguish intended behavior and authorized decisions from observed code,
+  tests, and other evidence of actual behavior;
+- determine material scope, exceptions, source authority, and update or
+  revalidation triggers before relying on volatile knowledge;
+- bind plans, candidates, verification, findings, and decisions to the relevant
+  task and revision, while carrying exclusions and unresolved questions forward;
+- return a consequential conflict or missing decision to its authoritative owner
+  instead of hiding it in a generated summary.
+
+Do not create a universal context manifest, copy complete documentation into
+Agent instructions, or persist every stage packet. Reuse an Issue, plan, MR/PR,
+review surface, or handoff when coordination or resumption makes persistence
+useful. Add a generated map, retrieval script, vector store, or other context
+system only when repeated measured failures or repository scale justify its
+maintenance and the target repository owns it.
+
 ## Harness Capability Report
 
 The ideal workflow and the current implementation status need different owners.
@@ -108,16 +136,22 @@ records:
 - fallback and consequence when the capability is unavailable;
 - the event that should cause this row to be reevaluated.
 
-At minimum assess Planning/Human Plan Review, Local Fast Verification, Unit and
-Integration tests, each applicable Targeted Runtime Verification surface,
-independent pre-acceptance technical review, Human Local Acceptance, Draft/Ready
-MR/PR handling, platform AI review, MR/PR CI, full E2E and its placement policy,
-Continuous Knowledge Capture, whether optional automatic Post-Merge Knowledge
-Audit is configured, observability for operated services, and architecture
-enforcement when material.
+At minimum assess Task-scoped context selection, Planning/Human Plan Review,
+Local Fast Verification, Unit and Integration tests, each applicable Targeted
+Runtime Verification surface, independent pre-acceptance technical review, Human
+Local Acceptance, Draft/Ready MR/PR handling, platform AI review, MR/PR CI, full
+E2E and its placement policy, Continuous Knowledge Capture, whether optional
+automatic Post-Merge Knowledge Audit is configured, observability for operated
+services, and architecture enforcement when material.
 Assess preview or staging acceptance only when the repository or its risk model
 makes it relevant. Add or omit other rows based on the repository; use
 `NOT APPLICABLE` rather than hiding a stage that direct evidence excludes.
+
+Assess effectiveness evidence only when the user requests it or the repository
+already maintains representative harness tasks, Agent traces, evaluation
+telemetry, or an equivalent decision surface. Apply the [quality-first evaluation
+order](assessment.md#harness-effectiveness-evidence); do not make a dashboard,
+benchmark, or token counter part of the minimum harness merely to populate a row.
 
 Name a test capability only when repository evidence supports that exact
 category. A dedicated suite, task, project, CI job, or representative test
@@ -301,7 +335,15 @@ shipping and operation are not applicable.
 
 ## Continuous knowledge capture and post-merge audit
 
-Make Continuous Knowledge Capture discoverable in the daily workflow and handoff surface. A confirmed durable, non-obvious, reusable lesson updates the smallest owner in the current branch or MR/PR; an unconfirmed interpretation stays a candidate or question. Preserve the [knowledge provenance](delivery-workflow.md#knowledge-provenance-and-routing) and [adoption evidence](delivery-workflow.md#adoption-evidence-for-feedback-derived-knowledge) defined by the workflow owner.
+Make Continuous Knowledge Capture and its [Knowledge Promotion
+Gate](delivery-workflow.md#knowledge-promotion-gate) discoverable in the daily
+workflow and handoff surface. A confirmed durable, non-obvious, reusable lesson
+updates the smallest owner in the current branch or MR/PR; an unconfirmed
+interpretation stays a candidate or question, and stale knowledge is revised or
+removed rather than preserved by default. Preserve the [knowledge
+provenance](delivery-workflow.md#knowledge-provenance-and-routing) and [adoption
+evidence](delivery-workflow.md#adoption-evidence-for-feedback-derived-knowledge)
+defined by the workflow owner.
 
 If the repository chooses automatic Post-Merge Knowledge Audit, its artifacts must identify the real merge trigger, trusted extraction command, headless Agent and project-selected model integration, scoped permissions and data boundary, cost and failure behavior, lifecycle context, and separate human-reviewed Knowledge MR/PR path. Prefer hosted events over local `.git/hooks`. Use `SETUP REQUIRED` while external setup remains and `NOT CONFIGURED` when no implementation is selected. A manual checklist is a separate capability and does not make automation ready.
 
